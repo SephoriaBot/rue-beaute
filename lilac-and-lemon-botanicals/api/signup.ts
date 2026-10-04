@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { turso } from '../src/lib/turso.js';
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { EMAIL_RE, clientIp, throttled } from './_lib/util.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -9,22 +8,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { email } = req.body as { email?: string };
-  if (!email || !EMAIL_RE.test(email)) {
+  if (throttled(`signup:${clientIp(req)}`, 5, 10 * 60_000)) {
+    return res.status(429).json({ error: 'Too many attempts. Please try again in a few minutes.' });
+  }
+
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
     return res.status(400).json({ error: 'Please enter a valid email' });
   }
 
   try {
     await turso.execute({
       sql: 'INSERT INTO signups (email) VALUES (?)',
-      args: [email.trim().toLowerCase()],
+      args: [email.toLowerCase()],
     });
     return res.status(200).json({ ok: true });
   } catch (err: any) {
-  if (err?.message?.includes('UNIQUE constraint')) {
-    return res.status(200).json({ ok: true }); // already signed up
+    if (err?.message?.includes('UNIQUE constraint')) {
+      return res.status(200).json({ ok: true }); // already signed up
+    }
+    console.error('Signup insert failed:', err);
+    return res.status(500).json({ error: 'Something went wrong' });
   }
-  console.error('Signup insert failed:', err);
-  return res.status(500).json({ error: 'Something went wrong' });
-}
 }

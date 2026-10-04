@@ -1,5 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { upload } from '@vercel/blob/client';
 
@@ -12,6 +13,7 @@ type TesterPhoto = {
 
 export default function TesterPhotos() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { apiFetch, getToken } = useApi();
 
   const [photos, setPhotos] = useState<TesterPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,9 +29,7 @@ export default function TesterPhotos() {
 
     async function loadPhotos() {
       try {
-        const res = await fetch(
-          `/api/tester/photos?userId=${encodeURIComponent(user.id)}`
-        );
+        const res = await apiFetch('/api/tester/photos');
 
         if (!res.ok) {
           throw new Error('Failed to load photos');
@@ -60,25 +60,23 @@ export default function TesterPhotos() {
     setError('');
 
     try {
+      const token = await getToken();
       const blob = await upload(
         `tester-photos/${user.id}-${Date.now()}-${file.name}`,
         file,
         {
           access: 'public',
           handleUploadUrl: '/api/tester/photo-upload',
-          clientPayload: JSON.stringify({
-            userId: user.id,
-          }),
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
 
-      const saveRes = await fetch('/api/tester/photos', {
+      const saveRes = await apiFetch('/api/tester/photos', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: user.id,
           photoType,
           imageUrl: blob.url,
         }),
@@ -88,9 +86,7 @@ export default function TesterPhotos() {
         throw new Error('Failed to save photo record');
       }
 
-      const refreshRes = await fetch(
-        `/api/tester/photos?userId=${encodeURIComponent(user.id)}`
-      );
+      const refreshRes = await apiFetch('/api/tester/photos');
 
       if (refreshRes.ok) {
         const data = await refreshRes.json();
@@ -118,13 +114,12 @@ export default function TesterPhotos() {
     setError('');
 
     try {
-      const res = await fetch('/api/tester/photos', {
+      const res = await apiFetch('/api/tester/photos', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: user.id,
           photoId,
         }),
       });

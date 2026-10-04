@@ -1,5 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 import { useEffect, useState } from 'react';
 
 type Answers = {
@@ -24,6 +25,7 @@ const emptyAnswers: Answers = {
 
 export default function TesterQuestionnaires() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { apiFetch } = useApi();
 
   const [answers, setAnswers] = useState<Answers>(emptyAnswers);
   const [loading, setLoading] = useState(true);
@@ -39,9 +41,7 @@ export default function TesterQuestionnaires() {
 
     async function loadQuestionnaire() {
       try {
-        const res = await fetch(
-          `/api/tester/questionnaire?userId=${encodeURIComponent(user.id)}`
-        );
+        const res = await apiFetch('/api/tester/questionnaire');
 
         if (!res.ok) {
           throw new Error('Failed to load questionnaire');
@@ -84,13 +84,12 @@ export default function TesterQuestionnaires() {
     setError('');
 
     try {
-      const res = await fetch('/api/tester/questionnaire', {
+      const res = await apiFetch('/api/tester/questionnaire', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: user.id,
           answers,
         }),
       });

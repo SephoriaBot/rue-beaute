@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 import './my-skin.css';
 
 const questions = [
@@ -171,6 +172,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export default function MySkin() {
   const { isSignedIn, user } = useUser();
+  const { apiFetch } = useApi();
 
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
@@ -189,7 +191,7 @@ export default function MySkin() {
       }
 
       try {
-        const res = await fetch(`/api/skin-assessment?userId=${user.id}`);
+        const res = await apiFetch('/api/skin-assessment');
         if (!res.ok) throw new Error('Failed to load saved assessment');
         const data = await res.json();
 
@@ -280,10 +282,10 @@ export default function MySkin() {
     setSaveState('saving');
 
     try {
-      const res = await fetch('/api/skin-assessment', {
+      const res = await apiFetch('/api/skin-assessment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, answers, result }),
+        body: JSON.stringify({ answers, result }),
       });
       if (!res.ok) throw new Error('Save failed');
       setSaveState('saved');

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 
 type ProfileForm = {
   fullName: string;
@@ -168,6 +169,7 @@ function getRecommendedProducts(products: Product[], assessment: SkinAssessment)
 
 export default function Account() {
   const { isSignedIn, isLoaded, user } = useUser();
+  const { apiFetch } = useApi();
 
   const [tab, setTab] = useState<TabKey>('profile');
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
@@ -190,7 +192,7 @@ export default function Account() {
 
       try {
         const [accountRes, productsRes] = await Promise.all([
-          fetch(`/api/account?userId=${user.id}`),
+          apiFetch('/api/account'),
           fetch('/api/products'),
         ]);
         if (!accountRes.ok) throw new Error('Failed to load account');
@@ -257,11 +259,10 @@ export default function Account() {
     const enteringNewCard = digits.length >= 4;
 
     try {
-      const res = await fetch('/api/account', {
+      const res = await apiFetch('/api/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: user.id,
           fullName: form.fullName,
           email: form.email,
           address: form.address,

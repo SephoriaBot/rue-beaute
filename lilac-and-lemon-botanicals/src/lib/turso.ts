@@ -3,11 +3,12 @@ import { createClient } from '@libsql/client';
 const url = process.env.TURSO_DATABASE_URL;
 const token = process.env.TURSO_AUTH_TOKEN;
 
-console.log('TURSO URL:', url);
-console.log('TURSO TOKEN EXISTS:', !!token);
-console.log('TURSO TOKEN LENGTH:', token?.length);
+if (!url || !token) {
+  // Say what's missing, never what the values are.
+  throw new Error('TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set on the server');
+}
 
 export const turso = createClient({
-  url: url!,
-  authToken: token!,
+  url,
+  authToken: token,
 });

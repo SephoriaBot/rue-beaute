@@ -1,11 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { turso } from '../src/lib/turso.js';
+import { getUserId } from './_lib/auth.js';
+import { boundedJson, safeParse } from './_lib/util.js';
+
+const MAX_JSON_CHARS = 20_000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
-    const userId = req.query.userId as string;
-    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+  res.setHeader('Cache-Control', 'no-store');
 
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Identity comes from the verified sign-in token, never from the request.
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Please sign in' });
+
+  if (req.method === 'GET') {
     try {
       const result = await turso.execute({
         sql: 'SELECT answers, result, updated_at FROM skin_assessments WHERE user_id = ?',
@@ -17,8 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({
         assessment: {
-          answers: JSON.parse(row.answers as string),
-          result: JSON.parse(row.result as string),
+          answers: safeParse(row.answers),
+          result: safeParse(row.result),
           updatedAt: row.updated_at,
         },
       });
@@ -28,37 +40,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  if (req.method === 'POST') {
-    const { userId, answers, result } = req.body as {
-      userId?: string;
-      answers?: unknown;
-      result?: unknown;
-    };
-
-    if (!userId || !answers || !result) {
-      return res.status(400).json({ error: 'Missing fields' });
-    }
-
-    try {
-      await turso.execute({
-        sql: `
-          INSERT INTO skin_assessments (user_id, answers, result, updated_at)
-          VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-          ON CONFLICT(user_id) DO UPDATE SET
-            answers = excluded.answers,
-            result = excluded.result,
-            updated_at = CURRENT_TIMESTAMP
-        `,
-        args: [userId, JSON.stringify(answers), JSON.stringify(result)],
-      });
-
-      return res.status(200).json({ ok: true });
-    } catch (err) {
-      console.error('Skin assessment save failed:', err);
-      return res.status(500).json({ error: 'Something went wrong' });
-    }
+  const { answers, result } = req.body ?? {};
+  if (!answers || !result || typeof answers !== 'object' || typeof result !== 'object') {
+    return res.status(400).json({ error: 'Missing fields' });
+  }
+  const answersJson = boundedJson(answers, MAX_JSON_CHARS);
+  const resultJson = boundedJson(result, MAX_JSON_CHARS);
+  if (!answersJson || !resultJson) {
+    return res.status(400).json({ error: 'Assessment is too large' });
   }
 
-  res.setHeader('Allow', 'GET, POST');
-  return res.status(405).json({ error: 'Method not allowed' });
+  try {
+    await turso.execute({
+      sql: `
+        INSERT INTO skin_assessments (user_id, answers, result, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+          answers = excluded.answers,
+          result = excluded.result,
+          updated_at = CURRENT_TIMESTAMP
+      `,
+      args: [userId, answersJson, resultJson],
+    });
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    console.error('Skin assessment save failed:', err);
+    return res.status(500).json({ error: 'Something went wrong' });
+  }
 }

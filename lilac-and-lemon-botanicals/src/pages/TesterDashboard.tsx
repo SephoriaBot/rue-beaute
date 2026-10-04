@@ -1,5 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { bottleImages } from '../productImages';
 
@@ -42,6 +43,7 @@ type TesterProduct = {
 
 export default function TesterDashboard() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { apiFetch } = useApi();
   const [tester, setTester] = useState<Tester | null>(null);
   const [loadingTester, setLoadingTester] = useState(true);
   const [checkins, setCheckins] = useState(0);
@@ -57,9 +59,7 @@ useEffect(() => {
 
   async function loadTester() {
     try {
-      const res = await fetch(
-        `/api/tester/profile?userId=${encodeURIComponent(user.id)}`
-      );
+      const res = await apiFetch('/api/tester/profile');
 
       if (!res.ok) {
         throw new Error('Failed to load tester');
@@ -68,18 +68,14 @@ useEffect(() => {
       const data = await res.json();
       setTester(data.tester ?? null);
 
-      const profileRes = await fetch(
-  `/api/account?userId=${encodeURIComponent(user.id)}`
-);
+      const profileRes = await apiFetch('/api/account');
 
 if (profileRes.ok) {
   const profileData = await profileRes.json();
   setFullName(profileData.profile?.fullName ?? '');
 }
 
-      const statsRes = await fetch(
-  `/api/tester/stats?userId=${encodeURIComponent(user.id)}`
-);
+      const statsRes = await apiFetch('/api/tester/stats');
 
 if (statsRes.ok) {
   const statsData = await statsRes.json();
@@ -87,9 +83,7 @@ if (statsRes.ok) {
   setPhotos(statsData.photos ?? 0);
 }
 
-const productsRes = await fetch(
-  `/api/tester/products?userId=${encodeURIComponent(user.id)}`
-);
+const productsRes = await apiFetch('/api/tester/products');
 
 if (productsRes.ok) {
   const productsData = await productsRes.json();

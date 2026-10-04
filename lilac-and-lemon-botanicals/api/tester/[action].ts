@@ -2,35 +2,84 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { del } from '@vercel/blob';
 import { handleUpload } from '@vercel/blob/client';
 import { turso } from '../../src/lib/turso.js';
+import { getUserId } from '../_lib/auth.js';
+import { boundedJson, safeParse } from '../_lib/util.js';
 
 // Consolidated tester endpoints. All /api/tester-* routes were merged here
 // (api/tester/[action].ts) to stay under Vercel's Hobby-plan function limit.
 // Dispatch is by the `action` route param, e.g. /api/tester/checkin
+//
+// SECURITY: every action identifies the caller from the verified Clerk token.
+// A userId sent in the query string or body is never trusted (and not read).
+
+const MAX_PHOTOS_PER_TESTER = 100;
+const MAX_NOTES_CHARS = 2000;
+const MAX_QUESTIONNAIRE_CHARS = 20_000;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+type Tester = {
+  id: number;
+  user_id: string;
+  name: unknown;
+  status: string;
+  test_start: unknown;
+  test_end: unknown;
+  email: unknown;
+};
 
 function getWeekNumber(testStart: unknown): number {
   if (!testStart) return 1;
-
   const start = new Date(String(testStart));
-
   if (Number.isNaN(start.getTime())) return 1;
-
   const diffDays = Math.floor((Date.now() - start.getTime()) / 86400000);
-
   return Math.max(1, Math.floor(diffDays / 7) + 1);
 }
 
-export default async function handler(
+async function findTester(userId: string): Promise<Tester | null> {
+  const result = await turso.execute({
+    sql: `SELECT id, user_id, email, name, status, test_start, test_end
+          FROM testers WHERE user_id = ? LIMIT 1`,
+    args: [userId],
+  });
+  const row = result.rows[0];
+  return row ? ({ ...row } as unknown as Tester) : null;
+}
+
+// Signed-in AND enrolled AND active, or an error response has already been sent.
+async function requireActiveTester(
   req: VercelRequest,
   res: VercelResponse
-) {
-  const action =
-    typeof req.query.action === 'string' ? req.query.action : '';
+): Promise<{ userId: string; tester: Tester } | null> {
+  const userId = await getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: 'Please sign in' });
+    return null;
+  }
+  const tester = await findTester(userId);
+  if (!tester) {
+    res.status(403).json({ error: 'Your account is not currently enrolled as a tester.' });
+    return null;
+  }
+  if (tester.status !== 'active') {
+    res.status(403).json({ error: 'Your tester enrollment is not currently active.' });
+    return null;
+  }
+  return { userId, tester };
+}
+
+function methodNotAllowed(res: VercelResponse, allow: string) {
+  res.setHeader('Allow', allow);
+  return res.status(405).json({ error: 'Method not allowed' });
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Cache-Control', 'no-store');
+
+  const action = typeof req.query.action === 'string' ? req.query.action : '';
 
   switch (action) {
     case 'profile':
       return handleProfile(req, res);
-    case 'login':
-      return handleLogin(req, res);
     case 'checkin':
       return handleCheckin(req, res);
     case 'photo-upload':
@@ -48,123 +97,35 @@ export default async function handler(
   }
 }
 
-// GET /api/tester/profile?userId=
+// GET /api/tester/profile
 async function handleProfile(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'GET') return methodNotAllowed(res, 'GET');
 
-  const userId =
-    typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Please sign in' });
 
   try {
     const result = await turso.execute({
-      sql: `
-        SELECT
-          id,
-          user_id,
-          name,
-          status,
-          test_start,
-          test_end
-        FROM testers
-        WHERE user_id = ?
-        LIMIT 1
-      `,
+      sql: `SELECT id, user_id, name, status, test_start, test_end
+            FROM testers WHERE user_id = ? LIMIT 1`,
       args: [userId],
     });
-
-    const tester = result.rows[0];
-
-    if (!tester) {
-      return res.status(200).json({ tester: null });
-    }
-
-    return res.status(200).json({ tester });
+    return res.status(200).json({ tester: result.rows[0] ?? null });
   } catch (err) {
     console.error('Tester lookup failed:', err);
     return res.status(500).json({ error: 'Something went wrong' });
   }
 }
 
-// POST /api/tester/login
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-async function handleLogin(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { email } = req.body as { email?: string };
-
-  if (!email || !EMAIL_RE.test(email.trim())) {
-    return res.status(400).json({ error: 'Please enter a valid email.' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  try {
-    const result = await turso.execute({
-      sql: `
-        SELECT id, email, name, status, test_start, test_end
-        FROM testers
-        WHERE email = ?
-        LIMIT 1
-      `,
-      args: [normalizedEmail],
-    });
-
-    if (result.rows.length === 0) {
-      return res.status(403).json({
-        error: 'That email is not registered as a tester.',
-      });
-    }
-
-    const tester = result.rows[0];
-
-    if (tester.status !== 'active') {
-      return res.status(403).json({
-        error: 'Your tester account is not currently active.',
-      });
-    }
-
-    return res.status(200).json({
-      ok: true,
-      tester,
-    });
-  } catch (err) {
-    console.error('Tester login failed:', err);
-    return res.status(500).json({
-      error: 'Something went wrong.',
-    });
-  }
-}
-
 // GET/POST /api/tester/checkin
 async function handleCheckin(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const userId =
-    typeof req.query.userId === 'string'
-      ? req.query.userId.trim()
-      : typeof req.body?.userId === 'string'
-        ? req.body.userId.trim()
-        : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'User ID is required.' });
-  }
+  if (req.method !== 'GET' && req.method !== 'POST') return methodNotAllowed(res, 'GET, POST');
 
   try {
+    const auth = await requireActiveTester(req, res);
+    if (!auth) return;
+    const { tester } = auth;
+
     await turso.execute(`
       CREATE TABLE IF NOT EXISTS tester_checkins (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,51 +142,15 @@ async function handleCheckin(req: VercelRequest, res: VercelResponse) {
       )
     `);
 
-    const testerResult = await turso.execute({
-      sql: `
-        SELECT id, user_id, email, name, status, test_start, test_end
-        FROM testers
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      args: [userId],
-    });
-
-    if (testerResult.rows.length === 0) {
-      return res.status(403).json({
-        error: 'Your account is not currently enrolled as a tester.',
-      });
-    }
-
-    const tester = testerResult.rows[0];
-
-    if (tester.status !== 'active') {
-      return res.status(403).json({
-        error: 'Your tester enrollment is not currently active.',
-      });
-    }
-
     const weekNumber = getWeekNumber(tester.test_start);
 
     if (req.method === 'GET') {
       const result = await turso.execute({
-        sql: `
-          SELECT
-            id,
-            tester_id,
-            week_number,
-            after_use_feel,
-            daytime_feel,
-            hydration,
-            breakouts,
-            sensitivity,
-            notes,
-            submitted_at
-          FROM tester_checkins
-          WHERE tester_id = ?
-            AND week_number = ?
-          LIMIT 1
-        `,
+        sql: `SELECT id, tester_id, week_number, after_use_feel, daytime_feel,
+                     hydration, breakouts, sensitivity, notes, submitted_at
+              FROM tester_checkins
+              WHERE tester_id = ? AND week_number = ?
+              LIMIT 1`,
         args: [tester.id, weekNumber],
       });
 
@@ -236,55 +161,30 @@ async function handleCheckin(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const {
-      afterUseFeel,
-      daytimeFeel,
-      hydration,
-      breakouts,
-      sensitivity,
-      notes,
-    } = req.body ?? {};
+    const { afterUseFeel, daytimeFeel, hydration, breakouts, sensitivity, notes } = req.body ?? {};
 
     const validFeels = ['dry_tight', 'comfortable', 'oily'];
+    const validScore = (value: unknown) =>
+      typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
 
-    const validScore = (value: unknown) => {
-      if (typeof value !== 'number') return false;
-      return Number.isInteger(value) && value >= 1 && value <= 5;
-    };
+    if (!validFeels.includes(afterUseFeel) || !validFeels.includes(daytimeFeel)) {
+      return res.status(400).json({ error: 'Please answer both skin-feel questions.' });
+    }
 
-    if (
-      !validFeels.includes(afterUseFeel) ||
-      !validFeels.includes(daytimeFeel)
-    ) {
+    if (!validScore(hydration) || !validScore(breakouts) || !validScore(sensitivity)) {
       return res.status(400).json({
-        error: 'Please answer both skin-feel questions.',
+        error: 'Please rate hydration, breakouts, and sensitivity from 1 to 5.',
       });
     }
 
-    if (
-      !validScore(hydration) ||
-      !validScore(breakouts) ||
-      !validScore(sensitivity)
-    ) {
-      return res.status(400).json({
-        error:
-          'Please rate hydration, breakouts, and sensitivity from 1 to 5.',
-      });
+    if (notes !== undefined && notes !== null && (typeof notes !== 'string' || notes.length > MAX_NOTES_CHARS)) {
+      return res.status(400).json({ error: `Notes must be ${MAX_NOTES_CHARS} characters or fewer.` });
     }
 
     await turso.execute({
       sql: `
         INSERT INTO tester_checkins
-          (
-            tester_id,
-            week_number,
-            after_use_feel,
-            daytime_feel,
-            hydration,
-            breakouts,
-            sensitivity,
-            notes
-          )
+          (tester_id, week_number, after_use_feel, daytime_feel, hydration, breakouts, sensitivity, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tester_id, week_number) DO UPDATE SET
           after_use_feel = excluded.after_use_feel,
@@ -307,246 +207,178 @@ async function handleCheckin(req: VercelRequest, res: VercelResponse) {
       ],
     });
 
-    return res.status(200).json({
-      ok: true,
-      weekNumber,
-    });
+    return res.status(200).json({ ok: true, weekNumber });
   } catch (err) {
     console.error('Tester check-in failed:', err);
-
-    return res.status(500).json({
-      error: 'Something went wrong saving your check-in.',
-    });
+    return res.status(500).json({ error: 'Something went wrong saving your check-in.' });
   }
 }
 
 // POST /api/tester/photo-upload (Vercel Blob client upload handshake)
 async function handlePhotoUpload(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'POST') return methodNotAllowed(res, 'POST');
 
   try {
-    const body =
-      typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
     const jsonResponse = await handleUpload({
       body,
       request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        const payload = clientPayload ? JSON.parse(clientPayload) : {};
+      onBeforeGenerateToken: async (pathname) => {
+        // Only active, signed-in testers can get an upload token.
+        const userId = await getUserId(req);
+        if (!userId) throw new Error('Please sign in');
 
-        const userId =
-          typeof payload?.userId === 'string' ? payload.userId.trim() : '';
+        const tester = await findTester(userId);
+        if (!tester || tester.status !== 'active') {
+          throw new Error('Your account is not an active tester');
+        }
 
-        if (!userId) {
-          throw new Error('Missing userId');
+        // Uploads must live under this user's own prefix.
+        if (!pathname.startsWith(`tester-photos/${userId}-`)) {
+          throw new Error('Invalid upload path');
+        }
+
+        const count = await turso.execute({
+          sql: 'SELECT COUNT(*) AS n FROM tester_photos WHERE tester_id = ?',
+          args: [tester.id],
+        });
+        if (Number(count.rows[0]?.n ?? 0) >= MAX_PHOTOS_PER_TESTER) {
+          throw new Error('Photo limit reached. Please delete some photos first.');
         }
 
         return {
           allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-          maximumSizeInBytes: 10 * 1024 * 1024,
+          maximumSizeInBytes: MAX_UPLOAD_BYTES,
           addRandomSuffix: true,
-          tokenPayload: JSON.stringify({
-            userId,
-          }),
+          tokenPayload: JSON.stringify({ userId }),
         };
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        console.log('Tester photo uploaded:', blob.url, tokenPayload);
+      onUploadCompleted: async ({ blob }) => {
+        console.log('Tester photo uploaded:', blob.pathname);
       },
     });
 
     return res.status(200).json(jsonResponse);
   } catch (err) {
     console.error('Tester photo upload failed:', err);
-    return res.status(400).json({
-      error: err instanceof Error ? err.message : 'Something went wrong.',
-    });
+    // These messages are ones we wrote above, so they're safe to show.
+    const message = err instanceof Error ? err.message : '';
+    const safe = [
+      'Please sign in',
+      'Your account is not an active tester',
+      'Invalid upload path',
+      'Photo limit reached. Please delete some photos first.',
+    ];
+    return res.status(400).json({ error: safe.includes(message) ? message : 'Could not start the upload.' });
+  }
+}
+
+// An image URL is only accepted if it is a Vercel Blob URL under THIS user's upload prefix.
+function isOwnBlobUrl(imageUrl: string, userId: string): boolean {
+  try {
+    const u = new URL(imageUrl);
+    return (
+      u.protocol === 'https:' &&
+      u.hostname.endsWith('.public.blob.vercel-storage.com') &&
+      u.pathname.startsWith(`/tester-photos/${userId}-`)
+    );
+  } catch {
+    return false;
   }
 }
 
 // GET/POST/DELETE /api/tester/photos
 async function handlePhotos(req: VercelRequest, res: VercelResponse) {
-  if (
-    req.method !== 'GET' &&
-    req.method !== 'POST' &&
-    req.method !== 'DELETE'
-  ) {
-    res.setHeader('Allow', 'GET, POST, DELETE');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const userId =
-    typeof req.query.userId === 'string'
-      ? req.query.userId.trim()
-      : typeof req.body?.userId === 'string'
-        ? req.body.userId.trim()
-        : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
+  if (req.method !== 'GET' && req.method !== 'POST' && req.method !== 'DELETE') {
+    return methodNotAllowed(res, 'GET, POST, DELETE');
   }
 
   try {
-    const testerResult = await turso.execute({
-      sql: `
-        SELECT id, user_id, name, status
-        FROM testers
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      args: [userId],
-    });
-
-    const tester = testerResult.rows[0];
-
-    if (!tester) {
-      return res.status(403).json({
-        error: 'Your account is not enrolled as a tester.',
-      });
-    }
-
-    if (tester.status !== 'active') {
-      return res.status(403).json({
-        error: 'Your tester enrollment is not currently active.',
-      });
-    }
+    const auth = await requireActiveTester(req, res);
+    if (!auth) return;
+    const { userId, tester } = auth;
 
     // DELETE PHOTO
     if (req.method === 'DELETE') {
       const photoId = Number(req.body?.photoId);
-
       if (!Number.isInteger(photoId) || photoId <= 0) {
-        return res.status(400).json({
-          error: 'Invalid photo ID.',
-        });
+        return res.status(400).json({ error: 'Invalid photo ID.' });
       }
 
       const photoResult = await turso.execute({
-        sql: `
-          SELECT id, image_url
-          FROM tester_photos
-          WHERE id = ?
-            AND tester_id = ?
-          LIMIT 1
-        `,
+        sql: 'SELECT id, image_url FROM tester_photos WHERE id = ? AND tester_id = ? LIMIT 1',
         args: [photoId, tester.id],
       });
-
       const photo = photoResult.rows[0];
+      if (!photo) return res.status(404).json({ error: 'Photo not found.' });
 
-      if (!photo) {
-        return res.status(404).json({
-          error: 'Photo not found.',
-        });
+      // Delete the actual image from Vercel Blob (don't let a missing file block cleanup).
+      try {
+        await del(String(photo.image_url));
+      } catch (err) {
+        console.error('Blob delete failed:', err);
       }
 
-      // Delete the actual image from Vercel Blob
-      await del(String(photo.image_url));
-
-      // Delete the photo record from Turso
       await turso.execute({
-        sql: `
-          DELETE FROM tester_photos
-          WHERE id = ?
-            AND tester_id = ?
-        `,
+        sql: 'DELETE FROM tester_photos WHERE id = ? AND tester_id = ?',
         args: [photoId, tester.id],
       });
 
-      return res.status(200).json({
-        ok: true,
-      });
+      return res.status(200).json({ ok: true });
     }
 
     // GET PHOTOS
     if (req.method === 'GET') {
       const result = await turso.execute({
-        sql: `
-          SELECT
-            id,
-            photo_type,
-            image_url,
-            uploaded_at
-          FROM tester_photos
-          WHERE tester_id = ?
-          ORDER BY uploaded_at DESC
-        `,
+        sql: `SELECT id, photo_type, image_url, uploaded_at
+              FROM tester_photos WHERE tester_id = ? ORDER BY uploaded_at DESC`,
         args: [tester.id],
       });
-
-      return res.status(200).json({
-        photos: result.rows,
-      });
+      return res.status(200).json({ photos: result.rows });
     }
 
     // POST PHOTO
     const { photoType, imageUrl } = req.body ?? {};
 
     if (!['baseline', 'progress'].includes(photoType)) {
-      return res.status(400).json({
-        error: 'Invalid photo type.',
-      });
+      return res.status(400).json({ error: 'Invalid photo type.' });
+    }
+    if (typeof imageUrl !== 'string' || imageUrl.length > 1000 || !isOwnBlobUrl(imageUrl.trim(), userId)) {
+      return res.status(400).json({ error: 'Invalid image URL.' });
     }
 
-    if (typeof imageUrl !== 'string' || !imageUrl.trim()) {
-      return res.status(400).json({
-        error: 'Image URL is required.',
-      });
+    const count = await turso.execute({
+      sql: 'SELECT COUNT(*) AS n FROM tester_photos WHERE tester_id = ?',
+      args: [tester.id],
+    });
+    if (Number(count.rows[0]?.n ?? 0) >= MAX_PHOTOS_PER_TESTER) {
+      return res.status(429).json({ error: 'Photo limit reached. Please delete some photos first.' });
     }
 
     const result = await turso.execute({
-      sql: `
-        INSERT INTO tester_photos (
-          tester_id,
-          photo_type,
-          image_url
-        )
-        VALUES (?, ?, ?)
-      `,
+      sql: 'INSERT INTO tester_photos (tester_id, photo_type, image_url) VALUES (?, ?, ?)',
       args: [tester.id, photoType, imageUrl.trim()],
     });
 
-    return res.status(200).json({
-      ok: true,
-      id: Number(result.lastInsertRowid),
-    });
+    return res.status(200).json({ ok: true, id: Number(result.lastInsertRowid) });
   } catch (err) {
     console.error('Tester photos request failed:', err);
-
-    return res.status(500).json({
-      error: 'Something went wrong.',
-    });
+    return res.status(500).json({ error: 'Something went wrong.' });
   }
 }
 
-// GET /api/tester/products?userId=
+// GET /api/tester/products
 async function handleProducts(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'GET') return methodNotAllowed(res, 'GET');
 
-  const userId =
-    typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Please sign in' });
 
   try {
     const result = await turso.execute({
       sql: `
-        SELECT
-          tp.id AS assignment_id,
-          p.id,
-          p.name,
-          p.description,
-          p.swatch_color,
-          p.size_oz,
-          p.price
+        SELECT tp.id AS assignment_id, p.id, p.name, p.description, p.swatch_color, p.size_oz, p.price
         FROM tester_products tp
         JOIN testers t ON t.id = tp.tester_id
         JOIN products p ON p.id = tp.product_id
@@ -555,44 +387,26 @@ async function handleProducts(req: VercelRequest, res: VercelResponse) {
       `,
       args: [userId],
     });
-
-    return res.status(200).json({
-      products: result.rows,
-    });
+    return res.status(200).json({ products: result.rows });
   } catch (err) {
     console.error('Tester products lookup failed:', err);
     return res.status(500).json({ error: 'Something went wrong' });
   }
 }
 
-// GET /api/tester/stats?userId=
+// GET /api/tester/stats
 async function handleStats(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'GET') return methodNotAllowed(res, 'GET');
 
-  const userId =
-    typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
+  const userId = await getUserId(req);
+  if (!userId) return res.status(401).json({ error: 'Please sign in' });
 
   try {
     const result = await turso.execute({
       sql: `
         SELECT
-          (
-            SELECT COUNT(*)
-            FROM tester_checkins tc
-            WHERE tc.tester_id = t.id
-          ) AS checkins,
-          (
-            SELECT COUNT(*)
-            FROM tester_photos tp
-            WHERE tp.tester_id = t.id
-          ) AS photos
+          (SELECT COUNT(*) FROM tester_checkins tc WHERE tc.tester_id = t.id) AS checkins,
+          (SELECT COUNT(*) FROM tester_photos tp WHERE tp.tester_id = t.id) AS photos
         FROM testers t
         WHERE t.user_id = ?
         LIMIT 1
@@ -610,111 +424,57 @@ async function handleStats(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// GET/POST /api/tester/questionnaire?userId=
+// GET/POST /api/tester/questionnaire
 async function handleQuestionnaire(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const userId =
-    typeof req.query.userId === 'string'
-      ? req.query.userId.trim()
-      : typeof req.body?.userId === 'string'
-        ? req.body.userId.trim()
-        : '';
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
+  if (req.method !== 'GET' && req.method !== 'POST') return methodNotAllowed(res, 'GET, POST');
 
   try {
-    const testerResult = await turso.execute({
-      sql: `
-        SELECT id, status
-        FROM testers
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      args: [userId],
-    });
+    const auth = await requireActiveTester(req, res);
+    if (!auth) return;
+    const { tester } = auth;
 
-    const tester = testerResult.rows[0];
-
-    if (!tester) {
-      return res.status(403).json({
-        error: 'Your account is not enrolled as a tester.',
-      });
-    }
-
-    if (tester.status !== 'active') {
-      return res.status(403).json({
-        error: 'Your tester enrollment is not currently active.',
-      });
-    }
-
-    // GET existing questionnaire
     if (req.method === 'GET') {
       const result = await turso.execute({
-        sql: `
-          SELECT answers, completed_at, updated_at
-          FROM tester_questionnaires
-          WHERE tester_id = ?
-          LIMIT 1
-        `,
+        sql: `SELECT answers, completed_at, updated_at
+              FROM tester_questionnaires WHERE tester_id = ? LIMIT 1`,
         args: [tester.id],
       });
 
       const row = result.rows[0];
-
-      if (!row) {
-        return res.status(200).json({
-          questionnaire: null,
-        });
-      }
+      if (!row) return res.status(200).json({ questionnaire: null });
 
       return res.status(200).json({
         questionnaire: {
-          answers: JSON.parse(String(row.answers)),
+          answers: safeParse(row.answers),
           completedAt: row.completed_at,
           updatedAt: row.updated_at,
         },
       });
     }
 
-    // SAVE questionnaire
     const answers = req.body?.answers;
-
-    if (!answers || typeof answers !== 'object') {
-      return res.status(400).json({
-        error: 'Questionnaire answers are required.',
-      });
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return res.status(400).json({ error: 'Questionnaire answers are required.' });
+    }
+    const answersJson = boundedJson(answers, MAX_QUESTIONNAIRE_CHARS);
+    if (!answersJson) {
+      return res.status(400).json({ error: 'Your answers are too long. Please shorten them.' });
     }
 
     await turso.execute({
       sql: `
-        INSERT INTO tester_questionnaires (
-          tester_id,
-          answers,
-          completed_at,
-          updated_at
-        )
+        INSERT INTO tester_questionnaires (tester_id, answers, completed_at, updated_at)
         VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(tester_id) DO UPDATE SET
           answers = excluded.answers,
           updated_at = CURRENT_TIMESTAMP
       `,
-      args: [tester.id, JSON.stringify(answers)],
+      args: [tester.id, answersJson],
     });
 
-    return res.status(200).json({
-      ok: true,
-    });
+    return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Tester questionnaire request failed:', err);
-
-    return res.status(500).json({
-      error: 'Something went wrong.',
-    });
+    return res.status(500).json({ error: 'Something went wrong.' });
   }
 }

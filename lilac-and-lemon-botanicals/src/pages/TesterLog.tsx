@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useUser } from '@clerk/react-router';
+import { useApi } from '../lib/api';
 
 type Feel = 'dry_tight' | 'comfortable' | 'oily';
 
@@ -48,6 +49,7 @@ function Scale({ label, value, onChange, helper }: {
 
 export default function TesterLog() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { apiFetch } = useApi();
   const userId = user?.id ?? '';
 
   const [weekNumber, setWeekNumber] = useState(1);
@@ -65,7 +67,7 @@ export default function TesterLog() {
   useEffect(() => {
     if (!userId) return;
 
-    fetch(`/api/tester/checkin?userId=${encodeURIComponent(userId)}`)
+    apiFetch('/api/tester/checkin')
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Unable to load your check-in.');
@@ -101,11 +103,10 @@ if (!isSignedIn) return <Navigate to="/login" replace />;
 
     setSaving(true);
     try {
-      const response = await fetch('/api/tester/checkin', {
+      const response = await apiFetch('/api/tester/checkin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-  userId,
   afterUseFeel,
   daytimeFeel,
   hydration,
