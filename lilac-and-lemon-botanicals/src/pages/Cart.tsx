@@ -15,7 +15,7 @@ export default function Cart() {
             <h2>Nothing here yet.</h2>
           </div>
           <div className="cart-empty">
-            <p>Add something from the garden to see it here.</p>
+            <p>Add something to see it here.</p>
             <Link to="/products">Browse Products</Link>
           </div>
         </div>
