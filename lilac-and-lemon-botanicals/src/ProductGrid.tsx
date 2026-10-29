@@ -165,13 +165,23 @@ export default function ProductGrid() {
                       onClick={() => openProduct(p)}
                       aria-label={`View ${p.name}`}
                     >
-                      <div className="product-tile-image">
-                        <img
-                          src={bottleImages[p.id]}
-                          alt=""
-                          aria-hidden="true"
-                        />
-                      </div>
+                      
+<div className="product-tile-editorial">
+  <span className="editorial-number">
+    {String(p.sort_order).padStart(2, '0')}
+  </span>
+
+  <span className="editorial-rule" />
+
+  <span className="editorial-name">
+    {p.name}
+  </span>
+
+  <span className="editorial-caption">
+    RUE BEAUTÉ
+  </span>
+</div>
+
 
                       <h3>{p.name}</h3>
                     </button>
