@@ -138,12 +138,9 @@ export default function ProductGrid() {
             <img className="page-icon" src="/icons/shop_products.png" alt="" aria-hidden="true" />
             <span className="label">{eyebrowLabel}</span>
 
-            <h2>Inspired by our personal garden.</h2>
+            <h2>Beauty, thoughtfully considered.</h2>
 
-            <p>
-              Chosen with intention, paired with gentle, effective ingredients.
-              Nothing extra, nothing borrowed — just formulas rooted in the garden.
-            </p>
+            <p>Every detail has a purpose. Carefully chosen ingredients, gentle yet effective formulas, and nothing more than what you need.</p>
           </div>
 
           {PRODUCT_GROUPS.map((group) => {
