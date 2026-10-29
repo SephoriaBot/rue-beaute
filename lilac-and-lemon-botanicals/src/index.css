@@ -3628,3 +3628,14 @@ section.products {
   letter-spacing: 0.24em;
   color: #a9678f;
 }
+
+
+.editorial-ingredient {
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: #8d7182;
+  text-align: center;
+  max-width: 220px;
+}
+
