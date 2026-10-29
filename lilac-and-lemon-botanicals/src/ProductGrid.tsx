@@ -173,13 +173,19 @@ export default function ProductGrid() {
 
   <span className="editorial-rule" />
 
-  <span className="editorial-name">
-    {p.name}
-  </span>
+  
+<span className="editorial-name">
+  {p.name}
+</span>
 
-  <span className="editorial-caption">
-    RUE BEAUTÉ
-  </span>
+<span className="editorial-ingredient">
+  {p.ingredient_label}
+</span>
+
+<span className="editorial-caption">
+  RUE BEAUTÉ
+</span>
+
 </div>
 
 
