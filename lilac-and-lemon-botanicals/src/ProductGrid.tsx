@@ -187,9 +187,6 @@ export default function ProductGrid() {
 </span>
 
 </div>
-
-
-                      <h3>{p.name}</h3>
                     </button>
                   ))}
                 </div>
