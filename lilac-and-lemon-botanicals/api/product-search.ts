@@ -229,23 +229,29 @@ export default async function handler(
   try {
     const products = await searchOpenBeautyFacts(ingredients);
 
-    const ranked = products
-      .map((product) => {
-        const score = Math.round(
-          (product.matches.length / ingredients.length) * 100
-        );
+    
+const ranked = products
+  .map((product) => {
+    const score = Math.round(
+      (product.matches.length / ingredients.length) * 100
+    );
 
-        return {
-          ...product,
-          score,
-          reason: makeReason(product.matches),
-        };
-      })
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        return b.matches.length - a.matches.length;
-      })
-      .slice(0, 60);
+    return {
+      ...product,
+      score,
+      reason: makeReason(product.matches),
+    };
+  })
+  // Prioritize the actual number of matches, not just the percentage.
+  .sort((a, b) => {
+    if (b.matches.length !== a.matches.length) {
+      return b.matches.length - a.matches.length;
+    }
+
+    return b.score - a.score;
+  })
+  .slice(0, 60);
+
 
     return res.status(200).json({
       products: ranked,
