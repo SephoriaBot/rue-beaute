@@ -1,0 +1,165 @@
+/* Rue Beaute — Ingredient Finder */
+
+.ingredient-page {
+  padding: 72px 0 96px;
+}
+
+.ingredient-wrap {
+  max-width: 860px;
+}
+
+.ingredient-intro {
+  max-width: 720px;
+  margin: 0 auto 36px;
+  text-align: center;
+}
+
+.ingredient-intro h1 {
+  margin: 10px 0 16px;
+  font-size: clamp(2.35rem, 5vw, 4.2rem);
+  line-height: 1.04;
+}
+
+.ingredient-intro p {
+  color: var(--brown-soft);
+  line-height: 1.8;
+}
+
+.ingredient-types {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 40px;
+}
+
+.ingredient-chip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--brown);
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 22px;
+}
+
+.ingredient-chip.active {
+  background: var(--sage-soft);
+  border-color: var(--sage);
+}
+
+.ingredient-blurb {
+  color: var(--brown-soft);
+  line-height: 1.8;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.ingredient-list {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ingredient-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  padding: 22px;
+}
+
+.ingredient-card h3 {
+  margin: 0 0 8px;
+}
+
+.ingredient-card p {
+  color: var(--brown-soft);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.ingredient-find {
+  background: var(--sage-soft);
+  border: 1px solid var(--sage);
+  border-radius: 999px;
+  color: var(--brown);
+  cursor: pointer;
+  font: inherit;
+  margin-top: 14px;
+  padding: 8px 18px;
+}
+
+.ingredient-find:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.ingredient-login,
+.ingredient-error {
+  font-size: 0.9rem;
+  margin-top: 14px;
+}
+
+.ingredient-error {
+  color: var(--brown);
+}
+
+.product-results {
+  border-top: 1px solid var(--line);
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 12px 0 0;
+}
+
+.product-results li {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.product-results img {
+  border-radius: 6px;
+  height: 40px;
+  object-fit: cover;
+  width: 40px;
+}
+
+.product-results a {
+  color: var(--brown);
+  line-height: 1.5;
+}
+
+.ingredient-search {
+  margin-top: 36px;
+  text-align: center;
+}
+
+.ingredient-note {
+  color: var(--brown-soft);
+  font-size: 0.9rem;
+  margin-top: 14px;
+}
+
+.ingredient-search .product-results {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-top: 24px;
+  padding: 12px 22px;
+  text-align: left;
+}
+
+.product-results li > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.product-match {
+  color: var(--brown-soft);
+  font-size: 0.85rem;
+}
