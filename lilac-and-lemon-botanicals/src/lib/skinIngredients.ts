@@ -1,3 +1,4 @@
+
 export type Ingredient = {
   name: string;
   tag: string;
@@ -21,61 +22,118 @@ export const skinTypes: SkinType[] = [
   {
     value: 'dry',
     label: 'Dry',
-    blurb: 'Focus on replenishing moisture, softening the skin, and supporting the skin barrier.',
+    blurb: 'Prioritize hydration, replenishing lipids, and ingredients that support a healthy moisture barrier.',
     ingredients: [
-      { name: 'Squalane', tag: 'squalane', why: 'A lightweight emollient that softens skin and helps reduce moisture loss.' },
-      { name: 'Ceramides', tag: 'ceramide-np', why: 'Help support the skin barrier and reduce moisture loss.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'A humectant that attracts water to help keep skin hydrated.' },
-      { name: 'Shea butter', tag: 'butyrospermum-parkii-butter', why: 'A rich emollient that helps soften dry, rough areas.' },
-      { name: 'Glycerin', tag: 'glycerin', why: 'A dependable humectant that helps maintain hydration.' },
-      { name: 'Panthenol', tag: 'panthenol', why: 'Helps condition skin and support a comfortable skin barrier.' },
+      { name: 'Squalane', tag: 'squalane', why: 'Softens skin and helps reduce moisture loss.' },
+      { name: 'Ceramides', tag: 'ceramide-np', why: 'Help replenish the skin barrier.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Attracts water to improve skin hydration.' },
+      { name: 'Glycerin', tag: 'glycerin', why: 'A reliable humectant that draws moisture into skin.' },
+      { name: 'Shea butter', tag: 'butyrospermum-parkii-butter', why: 'Rich emollient that softens rough, dry areas.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Helps soothe and support the moisture barrier.' },
+      { name: 'Urea', tag: 'urea', why: 'Hydrates and softens rough skin.' },
+      { name: 'Beta-glucan', tag: 'beta-glucan', why: 'Helps hydrate and soothe dry, stressed skin.' },
+      { name: 'Cholesterol', tag: 'cholesterol', why: 'A skin-identical lipid that supports barrier function.' },
+      { name: 'Fatty acids', tag: 'linoleic-acid', why: 'Help replenish lipids in the skin barrier.' },
+      { name: 'Jojoba oil', tag: 'simmondsia-chinensis-seed-oil', why: 'Provides emollient support and softens skin.' },
+      { name: 'Colloidal oatmeal', tag: 'avena-sativa-kernel-flour', why: 'Helps soothe dry and uncomfortable skin.' },
+      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'A natural moisturizing factor that helps retain water.' },
+      { name: 'Amino acids', tag: 'serine', why: 'Support hydration and skin conditioning.' },
+      { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect skin from environmental stress and dehydration.' },
+      { name: 'Allantoin', tag: 'allantoin', why: 'Softens and comforts dry, rough skin.' },
+      { name: 'Mango butter', tag: 'mangifera-indica-seed-butter', why: 'Provides rich emollient conditioning.' },
+      { name: 'Meadowfoam seed oil', tag: 'limnanthes-alba-seed-oil', why: 'Helps soften skin and reduce moisture loss.' },
     ],
   },
   {
     value: 'normal',
     label: 'Normal',
-    blurb: 'Maintain balance with gentle hydration, barrier support, and antioxidant care.',
+    blurb: 'Maintain balance with everyday hydration, antioxidant protection, and barrier support.',
     ingredients: [
-      { name: 'Glycerin', tag: 'glycerin', why: 'Provides everyday hydration without a heavy feel.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Helps attract water to keep skin hydrated.' },
-      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'An antioxidant that can help improve the appearance of uneven tone.' },
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports the skin barrier and helps improve the appearance of uneven tone.' },
-      { name: 'Panthenol', tag: 'panthenol', why: 'Helps condition skin and maintain comfort.' },
+      { name: 'Glycerin', tag: 'glycerin', why: 'Provides dependable everyday hydration.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Helps maintain a hydrated, plump appearance.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports barrier function and a more even-looking tone.' },
+      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'Provides antioxidant support and helps brighten dull-looking skin.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Supports hydration and skin comfort.' },
+      { name: 'Squalane', tag: 'squalane', why: 'Lightweight emollient that softens without a heavy feel.' },
+      { name: 'Green tea', tag: 'camellia-sinensis-leaf-extract', why: 'Provides antioxidant support.' },
+      { name: 'Ceramides', tag: 'ceramide-np', why: 'Help maintain a healthy skin barrier.' },
+      { name: 'Peptides', tag: 'palmitoyl-tripeptide-1', why: 'Condition skin and support a smoother-looking appearance.' },
+      { name: 'Coenzyme Q10', tag: 'ubiquinone', why: 'An antioxidant that helps protect against oxidative stress.' },
+      { name: 'Vitamin E', tag: 'tocopherol', why: 'Antioxidant support and skin conditioning.' },
+      { name: 'Beta-glucan', tag: 'beta-glucan', why: 'Helps hydrate and soothe skin.' },
+      { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect against environmental stress.' },
+      { name: 'Allantoin', tag: 'allantoin', why: 'Helps keep skin feeling comfortable.' },
+      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Provides lightweight hydration and soothing.' },
+      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'Supports the skin’s natural moisturizing factors.' },
+      { name: 'Ferulic acid', tag: 'ferulic-acid', why: 'Antioxidant support, often paired with vitamins C and E.' },
+      { name: 'Licorice root', tag: 'glycyrrhiza-glabra-root-extract', why: 'Helps improve the appearance of uneven tone.' },
     ],
   },
   {
     value: 'combination',
     label: 'Combination',
-    blurb: 'Balance oilier areas while keeping drier areas hydrated and comfortable.',
+    blurb: 'Balance oilier areas while maintaining hydration and comfort in drier areas.',
     ingredients: [
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports the skin barrier and can help improve the appearance of excess oil.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Provides lightweight hydration across different areas of the face.' },
-      { name: 'Glycerin', tag: 'glycerin', why: 'A lightweight humectant that helps maintain hydration.' },
-      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Provides lightweight conditioning and hydration.' },
-      { name: 'Squalane', tag: 'squalane', why: 'A lightweight emollient that softens dry areas without a particularly heavy feel.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports barrier health and helps improve the look of excess oil.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Hydrates without relying on heavy oils.' },
+      { name: 'Glycerin', tag: 'glycerin', why: 'Provides lightweight hydration.' },
+      { name: 'Squalane', tag: 'squalane', why: 'Softens dry areas without a heavy finish.' },
+      { name: 'Green tea', tag: 'camellia-sinensis-leaf-extract', why: 'Offers antioxidant and soothing support.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Helps keep skin hydrated and comfortable.' },
+      { name: 'Zinc PCA', tag: 'zinc-pca', why: 'Often used in formulas for oily and blemish-prone skin.' },
+      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'Helps exfoliate inside oil-prone pores.' },
+      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Lightweight hydration and soothing.' },
+      { name: 'Beta-glucan', tag: 'beta-glucan', why: 'Hydrates while helping calm skin.' },
+      { name: 'Allantoin', tag: 'allantoin', why: 'Helps soothe and condition skin.' },
+      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Helps improve the appearance of blemishes and uneven tone.' },
+      { name: 'PHA (gluconolactone)', tag: 'gluconolactone', why: 'Provides gentle exfoliation and hydration.' },
+      { name: 'Lactic acid', tag: 'lactic-acid', why: 'Exfoliates and can also support surface hydration.' },
+      { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect skin from environmental stress.' },
+      { name: 'Licorice root', tag: 'glycyrrhiza-glabra-root-extract', why: 'Helps improve the appearance of uneven tone.' },
+      { name: 'Centella asiatica', tag: 'centella-asiatica-extract', why: 'Helps soothe and condition skin.' },
+      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'Provides lightweight moisture retention.' },
     ],
   },
   {
     value: 'oily',
     label: 'Oily',
-    blurb: 'Look for lightweight hydration and ingredients that support balanced-looking skin.',
+    blurb: 'Look for lightweight hydration, pore-clearing exfoliants, and ingredients that support balanced skin.',
     ingredients: [
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Can help improve the appearance of excess oil and uneven skin tone.' },
-      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'An oil-soluble exfoliating ingredient that can help clear clogged pores.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Provides hydration without relying on heavy oils.' },
-      { name: 'Green tea extract', tag: 'camellia-sinensis-leaf-extract', why: 'Provides antioxidant support and helps condition skin.' },
-      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Provides lightweight hydration and conditioning.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports barrier health and helps improve the look of excess oil.' },
+      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'Oil-soluble exfoliant that helps clear congested pores.' },
+      { name: 'Zinc PCA', tag: 'zinc-pca', why: 'Commonly used in products for oily and blemish-prone skin.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Provides hydration without a heavy finish.' },
+      { name: 'Green tea', tag: 'camellia-sinensis-leaf-extract', why: 'Antioxidant support for oily, blemish-prone skin.' },
+      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Lightweight hydration and soothing.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Helps maintain hydration and skin comfort.' },
+      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Helps improve the appearance of blemishes and uneven tone.' },
+      { name: 'Lactic acid', tag: 'lactic-acid', why: 'Helps exfoliate dead surface cells.' },
+      { name: 'Gluconolactone', tag: 'gluconolactone', why: 'A gentle exfoliating PHA with humectant properties.' },
+      { name: 'Sulfur', tag: 'sulfur', why: 'Often used in products targeting blemishes and excess oil.' },
+      { name: 'Allantoin', tag: 'allantoin', why: 'Helps soothe and condition skin.' },
+      { name: 'Centella asiatica', tag: 'centella-asiatica-extract', why: 'Helps calm and condition blemish-prone skin.' },
+      { name: 'Witch hazel', tag: 'hamamelis-virginiana-water', why: 'Provides an astringent feel in some formulas.' },
+      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'Hydrates without a rich or oily texture.' },
+      { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect against environmental stress.' },
+      { name: 'L-carnitine', tag: 'carnitine', why: 'Used in some formulations designed for oily skin.' },
+      { name: 'Retinol', tag: 'retinol', why: 'Can improve the appearance of clogged pores and uneven texture.' },
     ],
   },
 ];
 
 export const sensitiveIngredients: Ingredient[] = [
-  { name: 'Centella asiatica (cica)', tag: 'centella-asiatica-extract', why: 'A soothing botanical commonly used in products for reactive skin.' },
-  { name: 'Panthenol', tag: 'panthenol', why: 'Helps condition skin and support a comfortable skin barrier.' },
-  { name: 'Ceramides', tag: 'ceramide-np', why: 'Help support the skin barrier.' },
-  { name: 'Allantoin', tag: 'allantoin', why: 'A skin-conditioning ingredient often used in gentle formulas.' },
-  { name: 'Colloidal oatmeal', tag: 'avena-sativa-kernel-flour', why: 'Helps soothe and condition dry or uncomfortable skin.' },
-  { name: 'Glycerin', tag: 'glycerin', why: 'Provides gentle hydration.' },
+  { name: 'Panthenol', tag: 'panthenol', why: 'Helps soothe and support the skin barrier.' },
+  { name: 'Allantoin', tag: 'allantoin', why: 'Helps calm and condition uncomfortable skin.' },
+  { name: 'Colloidal oatmeal', tag: 'avena-sativa-kernel-flour', why: 'Helps soothe dry, itchy-feeling skin.' },
+  { name: 'Centella asiatica', tag: 'centella-asiatica-extract', why: 'Helps soothe and condition the skin.' },
+  { name: 'Beta-glucan', tag: 'beta-glucan', why: 'Supports hydration and skin comfort.' },
+  { name: 'Ceramides', tag: 'ceramide-np', why: 'Help maintain the skin barrier.' },
+  { name: 'Squalane', tag: 'squalane', why: 'A gentle-feeling emollient that softens skin.' },
+  { name: 'Glycerin', tag: 'glycerin', why: 'Provides gentle, effective hydration.' },
+  { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect skin from environmental stress.' },
+  { name: 'Bisabolol', tag: 'bisabolol', why: 'A soothing skin-conditioning ingredient.' },
+  { name: 'Madecassoside', tag: 'madecassoside', why: 'A centella-derived ingredient used in calming formulas.' },
+  { name: 'Dipotasium glycyrrhizate', tag: 'dipotassium-glycyrrhizate', why: 'A licorice-derived ingredient used to soothe skin.' },
 ];
 
 export const skinConcerns: SkinConcern[] = [
@@ -83,69 +141,87 @@ export const skinConcerns: SkinConcern[] = [
     value: 'acne',
     label: 'Acne & breakouts',
     ingredients: [
-      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'Can help exfoliate inside pores and reduce the appearance of congestion.' },
-      { name: 'Benzoyl peroxide', tag: 'benzoyl-peroxide', why: 'An acne-focused ingredient that targets acne-causing bacteria.' },
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Can help improve the appearance of blemishes and uneven tone.' },
-      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Can help improve the appearance of blemishes and post-breakout marks.' },
+      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'Helps exfoliate inside congested pores.' },
+      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Helps improve the appearance of blemishes and post-breakout marks.' },
+      { name: 'Benzoyl peroxide', tag: 'benzoyl-peroxide', why: 'An acne-treatment ingredient that targets acne-causing bacteria.' },
+      { name: 'Sulfur', tag: 'sulfur', why: 'Often used in blemish-focused treatments.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports the barrier and helps improve the look of post-breakout discoloration.' },
     ],
   },
   {
-    value: 'blackheads',
+    value: 'pores',
     label: 'Blackheads & clogged pores',
     ingredients: [
-      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'An oil-soluble exfoliant that can help clear pore buildup.' },
-      { name: 'Glycolic acid', tag: 'glycolic-acid', why: 'An exfoliating acid that helps remove buildup on the skin surface.' },
-      { name: 'Lactic acid', tag: 'lactic-acid', why: 'A surface exfoliant that can help smooth uneven texture.' },
+      { name: 'Salicylic acid', tag: 'salicylic-acid', why: 'Oil-soluble exfoliant that helps clear pores.' },
+      { name: 'Retinol', tag: 'retinol', why: 'Helps improve the appearance of clogged pores and uneven texture.' },
+      { name: 'Gluconolactone', tag: 'gluconolactone', why: 'Provides gentle surface exfoliation.' },
+      { name: 'Lactic acid', tag: 'lactic-acid', why: 'Helps loosen dead surface cells.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Helps improve the appearance of enlarged pores.' },
     ],
   },
   {
     value: 'redness',
-    label: 'Redness',
+    label: 'Redness & irritation',
     ingredients: [
-      { name: 'Centella asiatica (cica)', tag: 'centella-asiatica-extract', why: 'A soothing botanical used in products for visibly stressed skin.' },
-      { name: 'Panthenol', tag: 'panthenol', why: 'Helps condition skin and support barrier comfort.' },
-      { name: 'Allantoin', tag: 'allantoin', why: 'Helps soothe and condition the skin.' },
-      { name: 'Colloidal oatmeal', tag: 'avena-sativa-kernel-flour', why: 'A soothing ingredient often used in products for dry, uncomfortable skin.' },
+      { name: 'Centella asiatica', tag: 'centella-asiatica-extract', why: 'Helps soothe and condition skin.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Supports hydration and skin comfort.' },
+      { name: 'Allantoin', tag: 'allantoin', why: 'Helps calm and soften skin.' },
+      { name: 'Bisabolol', tag: 'bisabolol', why: 'A soothing skin-conditioning ingredient.' },
+      { name: 'Colloidal oatmeal', tag: 'avena-sativa-kernel-flour', why: 'Helps comfort dry, itchy-feeling skin.' },
+      { name: 'Madecassoside', tag: 'madecassoside', why: 'A centella-derived ingredient used in calming formulas.' },
     ],
   },
   {
     value: 'uneven-tone',
     label: 'Uneven tone & dark spots',
     ingredients: [
-      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'An antioxidant that can help brighten the appearance of uneven tone.' },
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Can help improve the appearance of discoloration.' },
-      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Can help improve the appearance of dark spots and uneven tone.' },
-      { name: 'Alpha arbutin', tag: 'alpha-arbutin', why: 'A tone-focused ingredient used to improve the appearance of discoloration.' },
+      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'Antioxidant that helps brighten uneven-looking tone.' },
+      { name: 'Azelaic acid', tag: 'azelaic-acid', why: 'Helps improve the appearance of discoloration.' },
+      { name: 'Tranexamic acid', tag: 'tranexamic-acid', why: 'Used in formulas targeting the appearance of dark spots.' },
+      { name: 'Alpha arbutin', tag: 'alpha-arbutin', why: 'Helps improve the appearance of uneven pigmentation.' },
+      { name: 'Licorice root', tag: 'glycyrrhiza-glabra-root-extract', why: 'Helps brighten the look of uneven tone.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Helps improve the appearance of discoloration.' },
+      { name: 'Kojic acid', tag: 'kojic-acid', why: 'Used in products targeting the appearance of dark spots.' },
     ],
   },
   {
     value: 'fine-lines',
     label: 'Fine lines & wrinkles',
     ingredients: [
-      { name: 'Retinol', tag: 'retinol', why: 'A vitamin A derivative used to improve the appearance of fine lines and texture.' },
-      { name: 'Peptides', tag: 'palmitoyl-tripeptide-1', why: 'Skin-conditioning ingredients used in formulas targeting visible signs of aging.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Helps hydrate skin so fine dehydration lines appear less noticeable.' },
-      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'Provides antioxidant support and helps improve the appearance of uneven tone.' },
+      { name: 'Retinol', tag: 'retinol', why: 'Helps improve the appearance of fine lines and uneven texture.' },
+      { name: 'Peptides', tag: 'palmitoyl-tripeptide-1', why: 'Support a smoother-looking appearance.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Hydrates to soften the appearance of fine lines.' },
+      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'Provides antioxidant support.' },
+      { name: 'Coenzyme Q10', tag: 'ubiquinone', why: 'Antioxidant support for skin exposed to environmental stress.' },
+      { name: 'Bakuchiol', tag: 'bakuchiol', why: 'A plant-derived ingredient used in smoothing-focused formulas.' },
+      { name: 'Vitamin E', tag: 'tocopherol', why: 'Provides antioxidant and skin-conditioning support.' },
     ],
   },
   {
     value: 'dehydration',
     label: 'Dehydration',
     ingredients: [
-      { name: 'Glycerin', tag: 'glycerin', why: 'A humectant that attracts and holds water in the skin.' },
-      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Helps attract water to improve skin hydration.' },
-      { name: 'Panthenol', tag: 'panthenol', why: 'Helps condition skin and support barrier comfort.' },
-      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'A natural moisturizing factor component that helps maintain hydration.' },
+      { name: 'Hyaluronic acid', tag: 'sodium-hyaluronate', why: 'Attracts water to help plump the skin.' },
+      { name: 'Glycerin', tag: 'glycerin', why: 'Draws moisture into the skin.' },
+      { name: 'Panthenol', tag: 'panthenol', why: 'Supports hydration and skin comfort.' },
+      { name: 'Beta-glucan', tag: 'beta-glucan', why: 'Helps hydrate and soothe.' },
+      { name: 'Sodium PCA', tag: 'sodium-pca', why: 'Helps skin retain water.' },
+      { name: 'Urea', tag: 'urea', why: 'A humectant that improves skin hydration.' },
+      { name: 'Aloe vera', tag: 'aloe-barbadensis-leaf-juice', why: 'Provides lightweight hydration.' },
+      { name: 'Ectoin', tag: 'ectoin', why: 'Helps protect against environmental dehydration.' },
     ],
   },
   {
     value: 'dullness',
-    label: 'Dullness',
+    label: 'Dullness & uneven texture',
     ingredients: [
-      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'An antioxidant used to brighten the appearance of skin.' },
-      { name: 'Glycolic acid', tag: 'glycolic-acid', why: 'An exfoliating acid that can help improve surface dullness.' },
-      { name: 'Lactic acid', tag: 'lactic-acid', why: 'Helps exfoliate and smooth the skin surface.' },
-      { name: 'Niacinamide', tag: 'niacinamide', why: 'Can help improve the appearance of uneven tone.' },
+      { name: 'Lactic acid', tag: 'lactic-acid', why: 'Helps exfoliate dead surface cells.' },
+      { name: 'Gluconolactone', tag: 'gluconolactone', why: 'Provides gentle exfoliation.' },
+      { name: 'Vitamin C', tag: 'ascorbic-acid', why: 'Helps brighten dull-looking skin.' },
+      { name: 'Niacinamide', tag: 'niacinamide', why: 'Supports a more even-looking complexion.' },
+      { name: 'Mandelic acid', tag: 'mandelic-acid', why: 'An AHA used to improve the appearance of uneven texture.' },
+      { name: 'Ferulic acid', tag: 'ferulic-acid', why: 'Provides antioxidant support.' },
+      { name: 'Papain', tag: 'papain', why: 'An enzyme used in some exfoliating products.' },
     ],
   },
 ];
@@ -160,29 +236,32 @@ export const productCategories = [
   'Masks',
   'Eye Care',
   'Other',
-] as const;
+];
 
 export function getProfileIngredients(
   skinTypeValue: string,
   sensitive: boolean,
   concernValues: string[]
 ): Ingredient[] {
-  const primary = skinTypes.find((s) => s.value === skinTypeValue);
+  const primary = skinTypes.find((skin) => skin.value === skinTypeValue);
   if (!primary) return [];
 
-  const combined = [
+  const selectedConcerns = skinConcerns.filter((concern) =>
+    concernValues.includes(concern.value)
+  );
+
+  const all = [
     ...primary.ingredients,
     ...(sensitive ? sensitiveIngredients : []),
-    ...skinConcerns
-      .filter((c) => concernValues.includes(c.value))
-      .flatMap((c) => c.ingredients),
+    ...selectedConcerns.flatMap((concern) => concern.ingredients),
   ];
 
   const unique = new Map<string, Ingredient>();
 
-  for (const ingredient of combined) {
-    const key = ingredient.tag.toLowerCase();
-    if (!unique.has(key)) unique.set(key, ingredient);
+  for (const ingredient of all) {
+    if (!unique.has(ingredient.tag)) {
+      unique.set(ingredient.tag, ingredient);
+    }
   }
 
   return [...unique.values()];
