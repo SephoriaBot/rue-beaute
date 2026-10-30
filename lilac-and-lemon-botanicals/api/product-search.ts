@@ -77,6 +77,18 @@ function makeReason(matches: string[]): string {
   return 'Contains an ingredient selected for your skin profile.';
 }
 
+function makeReason(matches: string[]): string {
+  if (matches.length >= 4) {
+    return `Contains ${matches.length} ingredients selected for your skin profile.`;
+  }
+
+  if (matches.length >= 2) {
+    return `Contains ${matches.length} ingredients selected for your skin profile.`;
+  }
+
+  return 'Contains an ingredient selected for your skin profile.';
+}
+
 function getIngredients(
   skinTypeValue: string,
   sensitive: boolean,
