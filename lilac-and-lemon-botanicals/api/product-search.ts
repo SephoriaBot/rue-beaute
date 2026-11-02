@@ -101,68 +101,119 @@ function getIngredients(
   return [...unique.values()];
 }
 
+function shoppingUrl(brand: string, name: string): string {
+  const query = `${brand} ${name}`.trim();
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
+}
+
+function dedupeKey(brand: string, name: string): string {
+  return `${brand}|${name}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+type RawProduct = {
+  name: string;
+  brand: string;
+  imageUrl: string | null;
+  categories: string;
+};
+
+// Warm serverless instances reuse this, so repeat searches skip Open Beauty Facts.
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const ingredientCache = new Map<string, { at: number; products: RawProduct[] }>();
+
+async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
+  const cached = ingredientCache.get(tag);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.products;
+
+  const params = new URLSearchParams({
+    ingredients_tags: `en:${tag}`,
+    fields:
+      'code,product_name,brands,image_front_small_url,categories,countries_tags',
+    sort_by: 'unique_scans_n',
+    page_size: '100',
+    json: '1',
+  });
+
+  const response = await fetch(
+    `https://world.openbeautyfacts.org/api/v2/search?${params}`,
+    {
+      headers: { 'User-Agent': 'RueBeaute/1.0 (ingredient finder)' },
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+
+  if (!response.ok) return [];
+
+  const data = (await response.json()) as {
+    products?: Record<string, unknown>[];
+  };
+
+  const products: RawProduct[] = [];
+
+  for (const product of data.products ?? []) {
+    const name = cleanText(product.product_name, 150);
+    const brand = cleanText(product.brands, 100).split(',')[0].trim();
+    const countries = Array.isArray(product.countries_tags)
+      ? (product.countries_tags as unknown[])
+      : [];
+
+    // Only real, branded products that are sold in the United States.
+    if (!name || !brand) continue;
+    if (!countries.includes('en:united-states')) continue;
+
+    products.push({
+      name,
+      brand,
+      imageUrl: cleanUrl(product.image_front_small_url),
+      categories: cleanText(product.categories, 300),
+    });
+  }
+
+  ingredientCache.set(tag, { at: Date.now(), products });
+  return products;
+}
+
 async function searchOpenBeautyFacts(
   ingredients: Ingredient[]
 ): Promise<Product[]> {
-  const byCode = new Map<string, Product>();
+  const byKey = new Map<string, Product>();
 
-  await Promise.allSettled(
-    ingredients.map(async (ingredient) => {
-      const params = new URLSearchParams({
-        ingredients_tags: `en:${ingredient.tag}`,
-        fields: 'code,product_name,brands,image_front_small_url,categories',
-        page_size: '40',
-        json: '1',
-      });
-
-      const response = await fetch(
-        `https://world.openbeautyfacts.org/api/v2/search?${params}`,
-        {
-          headers: {
-            'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
-          },
-          signal: AbortSignal.timeout(15000),
-        }
-      );
-
-      if (!response.ok) return;
-
-      const data = (await response.json()) as {
-        products?: Record<string, unknown>[];
-      };
-
-      for (const product of data.products ?? []) {
-        const name = cleanText(product.product_name, 150);
-        const code = cleanText(product.code, 30);
-
-        if (!name || !/^\d+$/.test(code)) continue;
-
-        const existing = byCode.get(code);
-
-        if (existing) {
-          if (!existing.matches.includes(ingredient.name)) {
-            existing.matches.push(ingredient.name);
-          }
-        } else {
-          byCode.set(code, {
-            name,
-            brand: cleanText(product.brands, 100).split(',')[0].trim(),
-            url: `https://world.openbeautyfacts.org/product/${code}`,
-            imageUrl: cleanUrl(product.image_front_small_url),
-            source: 'database',
-            matches: [ingredient.name],
-            category: getCategory(
-              `${name} ${cleanText(product.categories, 300)}`
-            ),
-            score: 0,
-            reason: '',
-          });
-        }
-      }
-    })
+  const results = await Promise.allSettled(
+    ingredients.map((ingredient) => fetchIngredientProducts(ingredient.tag))
   );
 
-  return [...byCode.values()];
+  results.forEach((result, index) => {
+    if (result.status !== 'fulfilled') return;
+    const ingredient = ingredients[index];
+
+    for (const product of result.value) {
+      const key = dedupeKey(product.brand, product.name);
+      const existing = byKey.get(key);
+
+      if (existing) {
+        if (!existing.matches.includes(ingredient.name)) {
+          existing.matches.push(ingredient.name);
+        }
+        if (!existing.imageUrl && product.imageUrl) {
+          existing.imageUrl = product.imageUrl;
+        }
+      } else {
+        byKey.set(key, {
+          name: product.name,
+          brand: product.brand,
+          url: shoppingUrl(product.brand, product.name),
+          imageUrl: product.imageUrl,
+          source: 'database',
+          matches: [ingredient.name],
+          category: getCategory(`${product.name} ${product.categories}`),
+          score: 0,
+          reason: '',
+        });
+      }
+    }
+  });
+
+  return [...byKey.values()];
 }
 
 export default async function handler(
@@ -230,28 +281,20 @@ export default async function handler(
     const products = await searchOpenBeautyFacts(ingredients);
 
     
-const ranked = products
-  .map((product) => {
-    const score = Math.round(
-      (product.matches.length / ingredients.length) * 100
-    );
-
-    return {
-      ...product,
-      score,
-      reason: makeReason(product.matches),
-    };
-  })
-  // Prioritize the actual number of matches, not just the percentage.
-  .sort((a, b) => {
-    if (b.matches.length !== a.matches.length) {
-      return b.matches.length - a.matches.length;
-    }
-
-    return b.score - a.score;
-  })
-  .slice(0, 60);
-
+    const ranked = products
+      .map((product) => ({
+        ...product,
+        score: Math.round((product.matches.length / ingredients.length) * 100),
+        reason: makeReason(product.matches),
+      }))
+      .sort((a, b) => {
+        if (b.matches.length !== a.matches.length) {
+          return b.matches.length - a.matches.length;
+        }
+        // Listings with a photo are usually the more complete, real ones.
+        return Number(!!b.imageUrl) - Number(!!a.imageUrl);
+      })
+      .slice(0, 60);
 
     return res.status(200).json({
       products: ranked,
