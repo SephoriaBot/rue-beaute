@@ -35,6 +35,8 @@ export default function IngredientFinder() {
   const [sensitive, setSensitive] = useState(false);
   const [concerns, setConcerns] = useState<string[]>([]);
   const [search, setSearch] = useState<SearchState | null>(null);
+  const [openTag, setOpenTag] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string[]>([]);
 
   const { isSignedIn } = useAuth();
   const { apiFetch } = useApi();
@@ -53,6 +55,17 @@ export default function IngredientFinder() {
   const ingredients = current
     ? getProfileIngredients(selected!, sensitive, concerns)
     : [];
+
+  const openIngredient =
+    ingredients.find((ingredient) => ingredient.tag === openTag) ?? null;
+
+  function toggleExpanded(category: string) {
+    setExpanded((previous) =>
+      previous.includes(category)
+        ? previous.filter((item) => item !== category)
+        : [...previous, category]
+    );
+  }
 
   function toggleConcern(value: string) {
     setConcerns((previous) =>
@@ -217,14 +230,27 @@ export default function IngredientFinder() {
               </div>
             </div>
 
-            <div className="ingredient-list">
+            <div className="ingredient-list" role="group" aria-label="Ingredients">
               {ingredients.map((ingredient) => (
-                <article className="ingredient-card" key={ingredient.tag}>
-                  <h3>{ingredient.name}</h3>
-                  <p>{ingredient.why}</p>
-                </article>
+                <button
+                  key={ingredient.tag}
+                  type="button"
+                  className={`ingredient-tag${openTag === ingredient.tag ? ' active' : ''}`}
+                  aria-pressed={openTag === ingredient.tag}
+                  onClick={() =>
+                    setOpenTag(openTag === ingredient.tag ? null : ingredient.tag)
+                  }
+                >
+                  {ingredient.name}
+                </button>
               ))}
             </div>
+
+            <p className="ingredient-why" aria-live="polite">
+              {openIngredient
+                ? `${openIngredient.name}: ${openIngredient.why}`
+                : `${ingredients.length} ingredients — tap one to see why it helps.`}
+            </p>
 
             <div className="ingredient-search">
               {isSignedIn ? (
@@ -259,8 +285,8 @@ export default function IngredientFinder() {
                   <div className="ingredient-product-heading">
                     <h2>Product matches</h2>
                     <p>
-                      Ranked by the number of selected ingredients found in
-                      each product listing.
+                      US-available products, ranked by how many of your
+                      ingredients they contain. Links open a shopping search.
                     </p>
                   </div>
 
@@ -277,6 +303,9 @@ export default function IngredientFinder() {
 
                       if (products.length === 0) return null;
 
+                      const isOpen = expanded.includes(category);
+                      const shown = isOpen ? products : products.slice(0, 5);
+
                       return (
                         <section
                           className="ingredient-category"
@@ -288,7 +317,7 @@ export default function IngredientFinder() {
                           </div>
 
                           <ul className="product-results">
-                            {products.map((product, index) => (
+                            {shown.map((product, index) => (
                               <li
                                 key={`${product.brand}|${product.name}|${product.url}|${index}`}
                                 className="product-result"
@@ -314,21 +343,14 @@ export default function IngredientFinder() {
                                     {product.brand
                                       ? `${product.brand} — `
                                       : ''}
-                                    {product.name}
+                                    {product.name} ↗
                                   </a>
 
-                                  <span className="product-reason">
-                                    {product.reason}
-                                  </span>
-
                                   <span className="product-match">
-                                    Matches: {product.matches.join(', ')}
-                                  </span>
-
-                                  <span className="product-source">
-                                    {product.source === 'database'
-                                      ? 'Open Beauty Facts'
-                                      : 'Web search'}
+                                    {product.matches.slice(0, 4).join(', ')}
+                                    {product.matches.length > 4
+                                      ? ` +${product.matches.length - 4} more`
+                                      : ''}
                                   </span>
                                 </div>
 
@@ -339,6 +361,18 @@ export default function IngredientFinder() {
                               </li>
                             ))}
                           </ul>
+
+                          {products.length > 5 && (
+                            <button
+                              type="button"
+                              className="ingredient-more"
+                              onClick={() => toggleExpanded(category)}
+                            >
+                              {isOpen
+                                ? 'Show fewer'
+                                : `Show ${products.length - 5} more`}
+                            </button>
+                          )}
                         </section>
                       );
                     })
