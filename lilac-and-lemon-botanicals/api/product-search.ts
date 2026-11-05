@@ -5,9 +5,12 @@ import { clientIp, throttled } from './_lib/util.js';
 import {
   skinTypes,
   skinConcerns,
-  sensitiveIngredients,
-  type Ingredient,
+  getProfileIngredients,
 } from '../src/lib/skinIngredients.js';
+import {
+  checkProduct,
+  type CheckProduct,
+} from '../src/lib/ingredientCheck.js';
 
 export const config = { maxDuration: 60 };
 
@@ -32,6 +35,21 @@ type Product = {
   category: ProductCategory;
   score: number;
   reason: string;
+};
+
+type RawProduct = {
+  name: string;
+  brand: string;
+  imageUrl: string | null;
+  categories: string;
+  ingredientsText: string;
+  ingredientTags: string[];
+};
+
+type Candidate = {
+  product: Product;
+  ingredientsText: string;
+  ingredientTags: string[];
 };
 
 function cleanUrl(value: unknown): string | null {
@@ -66,41 +84,6 @@ function getCategory(value: string): ProductCategory {
   return 'Other';
 }
 
-function makeReason(matches: string[]): string {
-  return matches.length === 1
-    ? 'Contains an ingredient selected for your skin profile.'
-    : `Contains ${matches.length} ingredients selected for your skin profile.`;
-}
-
-function getIngredients(
-  skinTypeValue: string,
-  sensitive: boolean,
-  concernValues: string[]
-): Ingredient[] {
-  const primary = skinTypes.find((s) => s.value === skinTypeValue);
-  if (!primary) return [];
-
-  const selectedConcerns = skinConcerns.filter((concern) =>
-    concernValues.includes(concern.value)
-  );
-
-  const all = [
-    ...primary.ingredients,
-    ...(sensitive ? sensitiveIngredients : []),
-    ...selectedConcerns.flatMap((concern) => concern.ingredients),
-  ];
-
-  const unique = new Map<string, Ingredient>();
-
-  for (const ingredient of all) {
-    if (!unique.has(ingredient.tag)) {
-      unique.set(ingredient.tag, ingredient);
-    }
-  }
-
-  return [...unique.values()];
-}
-
 function shoppingUrl(brand: string, name: string): string {
   const query = `${brand} ${name}`.trim();
   return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
@@ -110,25 +93,24 @@ function dedupeKey(brand: string, name: string): string {
   return `${brand}|${name}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-type RawProduct = {
-  name: string;
-  brand: string;
-  imageUrl: string | null;
-  categories: string;
-};
-
-// Warm serverless instances reuse this, so repeat searches skip Open Beauty Facts.
+// Warm serverless instances reuse this cache.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const ingredientCache = new Map<string, { at: number; products: RawProduct[] }>();
+const ingredientCache = new Map<
+  string,
+  { at: number; products: RawProduct[] }
+>();
 
 async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   const cached = ingredientCache.get(tag);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.products;
+
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.products;
+  }
 
   const params = new URLSearchParams({
     ingredients_tags: `en:${tag}`,
     fields:
-      'code,product_name,brands,image_front_small_url,categories,countries_tags',
+      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_text,ingredients_tags',
     sort_by: 'unique_scans_n',
     page_size: '100',
     json: '1',
@@ -137,7 +119,9 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   const response = await fetch(
     `https://world.openbeautyfacts.org/api/v2/search?${params}`,
     {
-      headers: { 'User-Agent': 'RueBeaute/1.0 (ingredient finder)' },
+      headers: {
+        'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
+      },
       signal: AbortSignal.timeout(15000),
     }
   );
@@ -153,63 +137,99 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   for (const product of data.products ?? []) {
     const name = cleanText(product.product_name, 150);
     const brand = cleanText(product.brands, 100).split(',')[0].trim();
+
     const countries = Array.isArray(product.countries_tags)
-      ? (product.countries_tags as unknown[])
+      ? product.countries_tags
       : [];
 
-    // Only real, branded products that are sold in the United States.
     if (!name || !brand) continue;
     if (!countries.includes('en:united-states')) continue;
+
+    const ingredientsText = cleanText(product.ingredients_text, 5000);
+
+    const ingredientTags = Array.isArray(product.ingredients_tags)
+      ? product.ingredients_tags
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map((tag) =>
+            tag
+              .replace(/^[a-z]{2}:/i, '')
+              .replace(/-/g, ' ')
+          )
+      : [];
+
+    // Do not recommend products that have no formula data to evaluate.
+    if (!ingredientsText && ingredientTags.length === 0) continue;
 
     products.push({
       name,
       brand,
       imageUrl: cleanUrl(product.image_front_small_url),
       categories: cleanText(product.categories, 300),
+      ingredientsText,
+      ingredientTags,
     });
   }
 
-  ingredientCache.set(tag, { at: Date.now(), products });
+  ingredientCache.set(tag, {
+    at: Date.now(),
+    products,
+  });
+
   return products;
 }
 
 async function searchOpenBeautyFacts(
-  ingredients: Ingredient[]
-): Promise<Product[]> {
-  const byKey = new Map<string, Product>();
+  ingredients: ReturnType<typeof getProfileIngredients>
+): Promise<Candidate[]> {
+  const byKey = new Map<string, Candidate>();
 
   const results = await Promise.allSettled(
-    ingredients.map((ingredient) => fetchIngredientProducts(ingredient.tag))
+    ingredients.map((ingredient) =>
+      fetchIngredientProducts(ingredient.tag)
+    )
   );
 
-  results.forEach((result, index) => {
+  results.forEach((result) => {
     if (result.status !== 'fulfilled') return;
-    const ingredient = ingredients[index];
 
-    for (const product of result.value) {
-      const key = dedupeKey(product.brand, product.name);
+    for (const raw of result.value) {
+      const key = dedupeKey(raw.brand, raw.name);
       const existing = byKey.get(key);
 
       if (existing) {
-        if (!existing.matches.includes(ingredient.name)) {
-          existing.matches.push(ingredient.name);
+        if (!existing.product.imageUrl && raw.imageUrl) {
+          existing.product.imageUrl = raw.imageUrl;
         }
-        if (!existing.imageUrl && product.imageUrl) {
-          existing.imageUrl = product.imageUrl;
+
+        if (!existing.ingredientsText && raw.ingredientsText) {
+          existing.ingredientsText = raw.ingredientsText;
         }
-      } else {
-        byKey.set(key, {
-          name: product.name,
-          brand: product.brand,
-          url: shoppingUrl(product.brand, product.name),
-          imageUrl: product.imageUrl,
+
+        existing.ingredientTags = [
+          ...new Set([
+            ...existing.ingredientTags,
+            ...raw.ingredientTags,
+          ]),
+        ];
+
+        continue;
+      }
+
+      byKey.set(key, {
+        product: {
+          name: raw.name,
+          brand: raw.brand,
+          url: shoppingUrl(raw.brand, raw.name),
+          imageUrl: raw.imageUrl,
           source: 'database',
-          matches: [ingredient.name],
-          category: getCategory(`${product.name} ${product.categories}`),
+          matches: [],
+          category: getCategory(`${raw.name} ${raw.categories}`),
           score: 0,
           reason: '',
-        });
-      }
+        },
+        ingredientsText: raw.ingredientsText,
+        ingredientTags: raw.ingredientTags,
+      });
     }
   });
 
@@ -251,7 +271,8 @@ export default async function handler(
 
   const requestedConcerns: string[] = Array.isArray(body.concerns)
     ? body.concerns.filter(
-        (value: unknown): value is string => typeof value === 'string'
+        (value: unknown): value is string =>
+          typeof value === 'string'
       )
     : [];
 
@@ -262,10 +283,12 @@ export default async function handler(
   }
 
   const validConcerns = skinConcerns
-    .filter((concern) => requestedConcerns.includes(concern.value))
+    .filter((concern) =>
+      requestedConcerns.includes(concern.value)
+    )
     .map((concern) => concern.value);
 
-  const ingredients = getIngredients(
+  const ingredients = getProfileIngredients(
     skinType.value,
     sensitive,
     validConcerns
@@ -278,27 +301,44 @@ export default async function handler(
   }
 
   try {
-    const products = await searchOpenBeautyFacts(ingredients);
+    const candidates = await searchOpenBeautyFacts(ingredients);
 
-    
-    const ranked = products
-      .map((product) => ({
-        ...product,
-        score: Math.round((product.matches.length / ingredients.length) * 100),
-        reason: makeReason(product.matches),
-      }))
+    const ranked = candidates
+      .map((candidate) => {
+        const product: CheckProduct = {
+          name: candidate.product.name,
+          brand: candidate.product.brand,
+          imageUrl: candidate.product.imageUrl,
+          tags: candidate.ingredientTags,
+          text: candidate.ingredientsText,
+        };
+
+        const result = checkProduct(
+          product,
+          skinType.value,
+          sensitive,
+          validConcerns
+        );
+
+        return {
+          ...candidate.product,
+          matches: result.hits.map((hit) => hit.name),
+          score: result.score,
+          reason: result.note,
+          verdict: result.verdict,
+        };
+      })
+      .filter((product) => product.verdict !== 'unknown')
       .sort((a, b) => {
-        if (b.matches.length !== a.matches.length) {
-          return b.matches.length - a.matches.length;
-        }
-        // Listings with a photo are usually the more complete, real ones.
+        if (b.score !== a.score) return b.score - a.score;
         return Number(!!b.imageUrl) - Number(!!a.imageUrl);
       })
-      .slice(0, 60);
+      .slice(0, 60)
+      .map(({ verdict: _verdict, ...product }) => product);
 
     return res.status(200).json({
       products: ranked,
-      total: ingredients.length,
+      total: ranked.length,
       profile: {
         skinType: skinType.value,
         sensitive,
