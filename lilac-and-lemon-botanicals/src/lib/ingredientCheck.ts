@@ -5,7 +5,7 @@ import {
   skinConcerns,
   sensitiveIngredients,
   type Ingredient,
-} from './skinIngredients';
+} from './skinIngredients.js';
 
 export type CheckProduct = {
   name: string;
