@@ -23,6 +23,7 @@ export type CheckResult = {
   hits: Ingredient[];
   flags: string[];
   note: string;
+  score: number;
 };
 
 export const verdictRank: Record<Verdict, number> = {
@@ -197,6 +198,7 @@ export function checkProduct(
       hits: [],
       flags: [],
       note: 'This listing has no ingredient list, so it cannot be scored.',
+      score: 0,
     };
   }
 
@@ -267,5 +269,6 @@ export function checkProduct(
     hits,
     flags,
     note: `${noteParts.join('. ')}.`,
+    score: Math.round(coverage),
   };
 }
