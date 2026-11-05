@@ -102,7 +102,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   const params = new URLSearchParams({
     ingredients_tags: `en:${tag}`,
     fields:
-      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_text,ingredients_tags',
+      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
     sort_by: 'unique_scans_n',
     page_size: '100',
     json: '1',
@@ -114,10 +114,11 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
       headers: {
         'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
       },
+      signal: AbortSignal.timeout(15000),
     }
   );
 
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
 
   const data = (await response.json()) as {
     products?: Record<string, unknown>[];
@@ -178,6 +179,10 @@ async function searchOpenBeautyFacts(
       fetchIngredientProducts(ingredient.tag)
     )
   );
+
+  if (results.every((result) => result.status === 'rejected')) {
+    throw new Error('UPSTREAM_UNAVAILABLE');
+  }
 
   results.forEach((result) => {
     if (result.status !== 'fulfilled') return;
@@ -363,6 +368,13 @@ export default async function handler(
     });
   } catch (error) {
     console.error('Product search failed:', error);
+
+    if (error instanceof Error && error.message === 'UPSTREAM_UNAVAILABLE') {
+      return res.status(503).json({
+        error:
+          'The product database is slow right now. Please try again in a minute.',
+      });
+    }
 
     return res.status(500).json({
       error: 'Something went wrong while searching for products.',
