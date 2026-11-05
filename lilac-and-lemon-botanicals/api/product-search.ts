@@ -1,4 +1,3 @@
-
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getUserId } from './_lib/auth.js';
 import { clientIp, throttled } from './_lib/util.js';
@@ -92,7 +91,10 @@ const ingredientCache = new Map<
   { at: number; products: RawProduct[] }
 >();
 
-async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
+async function fetchIngredientProducts(
+  tag: string,
+  timeoutMs: number
+): Promise<RawProduct[]> {
   const cached = ingredientCache.get(tag);
 
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
@@ -113,7 +115,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
       headers: {
         'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
       },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(timeoutMs),
     }
   );
 
@@ -175,23 +177,38 @@ async function searchOpenBeautyFacts(
 
   // Open Beauty Facts is a free community service, so ask it for a few
   // ingredients at a time instead of all at once, and stop at a deadline.
-  const deadline = Date.now() + 40000;
+  // Find candidates using a handful of the most relevant ingredients (the
+  // first few of the skin type plus the last few, which are usually concerns).
+  // Every product found is still scored against your full profile.
+  const queryIngredients = [
+    ...new Map(
+      [...ingredients.slice(0, 6), ...ingredients.slice(-6)].map((item) => [
+        item.tag,
+        item,
+      ])
+    ).values(),
+  ];
+
+  const deadline = Date.now() + 50000;
   const results: (PromiseSettledResult<RawProduct[]> | undefined)[] =
-    new Array(ingredients.length).fill(undefined);
+    new Array(queryIngredients.length).fill(undefined);
   let next = 0;
 
   async function worker() {
-    while (next < ingredients.length && Date.now() < deadline) {
+    while (next < queryIngredients.length && Date.now() < deadline) {
       const index = next++;
 
       try {
         results[index] = {
           status: 'fulfilled',
-          value: await fetchIngredientProducts(ingredients[index].tag),
+          value: await fetchIngredientProducts(
+            queryIngredients[index].tag,
+            Math.max(3000, Math.min(25000, deadline - Date.now()))
+          ),
         };
       } catch (reason) {
         console.error(
-          `Ingredient lookup failed (${ingredients[index].tag}):`,
+          `Ingredient lookup failed (${queryIngredients[index].tag}):`,
           reason
         );
         results[index] = { status: 'rejected', reason };
@@ -199,7 +216,7 @@ async function searchOpenBeautyFacts(
     }
   }
 
-  await Promise.all(Array.from({ length: 4 }, worker));
+  await Promise.all(Array.from({ length: 6 }, worker));
 
   const finished = results.filter(
     (result): result is PromiseSettledResult<RawProduct[]> => !!result
