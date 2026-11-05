@@ -141,7 +141,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     }
   );
 
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
 
   const data = (await response.json()) as {
     products?: Record<string, unknown>[];
@@ -180,6 +180,12 @@ async function searchOpenBeautyFacts(
   const results = await Promise.allSettled(
     ingredients.map((ingredient) => fetchIngredientProducts(ingredient.tag))
   );
+
+  // If every lookup failed, the database is down or overloaded. Say so,
+  // instead of reporting "no matching products".
+  if (results.every((result) => result.status === 'rejected')) {
+    throw new Error('UPSTREAM_UNAVAILABLE');
+  }
 
   results.forEach((result, index) => {
     if (result.status !== 'fulfilled') return;
@@ -306,6 +312,13 @@ export default async function handler(
     });
   } catch (error) {
     console.error('Product search failed:', error);
+
+    if (error instanceof Error && error.message === 'UPSTREAM_UNAVAILABLE') {
+      return res.status(503).json({
+        error:
+          'The product database (Open Beauty Facts) is not responding right now. Please try again later.',
+      });
+    }
 
     return res.status(500).json({
       error: 'Something went wrong while searching for products.',
