@@ -1,0 +1,289 @@
+/* Rue Beaute — Ingredient Finder: brand browse + my products */
+
+.check-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 34px;
+  padding-bottom: 18px;
+}
+
+.check-tab {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--brown-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.check-tab.active {
+  background: var(--sage-soft);
+  border-color: var(--sage);
+  color: var(--brown);
+}
+
+.check-panel {
+  text-align: left;
+}
+
+.check-center {
+  text-align: center;
+}
+
+.check-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.check-form input,
+.check-manual input,
+.check-manual textarea {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--brown);
+  font: inherit;
+  padding: 12px 16px;
+}
+
+.check-form input {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.check-favs {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.check-favs small {
+  color: var(--brown-soft);
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.check-favs > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.check-fav {
+  align-items: center;
+  background: var(--pink-soft);
+  border-radius: 999px;
+  display: inline-flex;
+}
+
+.check-fav button {
+  background: none;
+  border: 0;
+  color: var(--brown);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 7px 8px 7px 14px;
+}
+
+.check-fav .check-fav-x {
+  color: var(--brown-soft);
+  padding: 7px 12px 7px 4px;
+}
+
+.check-results-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.check-results-head h3 {
+  margin: 0;
+}
+
+.check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.check-card {
+  border-bottom: 1px solid var(--line);
+  padding: 17px 4px;
+}
+
+.check-card-main {
+  align-items: center;
+  display: flex;
+  gap: 15px;
+}
+
+.check-card-main > img,
+.check-card-main .product-placeholder {
+  background: var(--cream, #fbf5f3);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  flex: 0 0 62px;
+  height: 62px;
+  object-fit: contain;
+  width: 62px;
+}
+
+.check-card-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.check-card-info strong {
+  color: var(--brown);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.check-hits,
+.check-note {
+  color: var(--brown-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.check-note {
+  color: #a34d4d;
+}
+
+.check-badge {
+  align-self: flex-start;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 3px 11px;
+}
+
+.check-great {
+  background: var(--sage-soft);
+  color: var(--brown);
+}
+
+.check-good {
+  background: var(--pink-soft);
+  color: var(--brown);
+}
+
+.check-okay {
+  background: var(--cream-deep);
+  color: var(--brown-soft);
+}
+
+.check-limited,
+.check-unknown {
+  background: var(--surface-soft);
+  color: var(--brown-soft);
+}
+
+.check-action {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--brown);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 14px;
+}
+
+.check-action:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.check-details {
+  margin: 10px 0 0 77px;
+}
+
+.check-details summary {
+  color: var(--sage);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.check-details p {
+  color: var(--brown-soft);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  margin: 8px 0 0;
+}
+
+.check-add {
+  margin-top: 38px;
+}
+
+.check-add h3 {
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.check-manual {
+  margin-top: 22px;
+}
+
+.check-manual summary {
+  color: var(--sage);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.check-manual input,
+.check-manual textarea {
+  display: block;
+  margin: 12px 0 0;
+  width: 100%;
+}
+
+.check-manual button {
+  display: block;
+  margin: 16px auto 0;
+}
+
+@media (max-width: 560px) {
+  .check-card-main {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .check-card-info {
+    flex: 1 1 60%;
+  }
+
+  .check-action {
+    margin-left: 77px;
+  }
+
+  .check-details {
+    margin-left: 0;
+  }
+}
