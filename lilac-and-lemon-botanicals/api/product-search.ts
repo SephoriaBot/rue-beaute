@@ -183,63 +183,62 @@ function dedupeKey(brand: string, name: string): string {
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-const ingredientCache = new Map<
+// Brand tags searched first, so familiar names show up in results.
+const SEARCH_BRANDS = [
+  'cerave',
+  'cetaphil',
+  'the-ordinary',
+  'neutrogena',
+  'la-roche-posay',
+  'aveeno',
+  'vanicream',
+  'eucerin',
+];
+
+const productCache = new Map<
   string,
   { at: number; products: RawProduct[] }
 >();
 
-async function fetchIngredientProducts(
-  tag: string,
+type Job = { kind: 'brand' | 'ingredient'; key: string };
+
+async function fetchProducts(
+  job: Job,
   timeoutMs: number
 ): Promise<RawProduct[]> {
-  const cached = ingredientCache.get(tag);
+  const cacheKey = `${job.kind}:${job.key}`;
+  const cached = productCache.get(cacheKey);
 
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
     return cached.products;
   }
 
-  // Sorting by most-scanned surfaces products people actually recognize, but
-  // it is the slow part of the query. Try it first, and if the database times
-  // out, retry once without it so the search still finishes.
-  async function request(sorted: boolean, ms: number) {
-    const params = new URLSearchParams({
-      ingredients_tags: `en:${tag}`,
-      fields:
-        'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
-      page_size: sorted ? '60' : '100',
-      json: '1',
-    });
+  // No sort_by here: sorting by popularity makes this database time out.
+  const params = new URLSearchParams({
+    fields:
+      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
+    page_size: job.kind === 'brand' ? '60' : '40',
+    json: '1',
+  });
 
-    if (sorted) params.set('sort_by', 'unique_scans_n');
+  if (job.kind === 'brand') params.set('brands_tags', job.key);
+  else params.set('ingredients_tags', `en:${job.key}`);
 
-    const response = await fetch(
-      `https://world.openbeautyfacts.org/api/v2/search?${params}`,
-      {
-        headers: {
-          'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
-        },
-        signal: AbortSignal.timeout(ms),
-      }
-    );
+  const response = await fetch(
+    `https://world.openbeautyfacts.org/api/v2/search?${params}`,
+    {
+      headers: {
+        'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    }
+  );
 
-    if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
+  if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
 
-    return (await response.json()) as {
-      products?: Record<string, unknown>[];
-    };
-  }
-
-  const startedAt = Date.now();
-  let data: { products?: Record<string, unknown>[] };
-
-  try {
-    data = await request(true, Math.min(timeoutMs, 15000));
-  } catch {
-    data = await request(
-      false,
-      Math.max(2000, timeoutMs - (Date.now() - startedAt))
-    );
-  }
+  const data = (await response.json()) as {
+    products?: Record<string, unknown>[];
+  };
 
   const products: RawProduct[] = [];
 
@@ -278,7 +277,7 @@ async function fetchIngredientProducts(
     });
   }
 
-  ingredientCache.set(tag, {
+  productCache.set(cacheKey, {
     at: Date.now(),
     products,
   });
@@ -291,40 +290,41 @@ async function searchOpenBeautyFacts(
 ): Promise<Candidate[]> {
   const byKey = new Map<string, Candidate>();
 
-  // Open Beauty Facts is a free community service, so ask it for a few
-  // ingredients at a time instead of all at once, and stop at a deadline.
-  // Find candidates using a handful of the most relevant ingredients (the
-  // first few of the skin type plus the last few, which are usually concerns).
-  // Every product found is still scored against your full profile.
-  const queryIngredients = [
-    ...new Map(
-      [...ingredients.slice(0, 6), ...ingredients.slice(-6)].map((item) => [
-        item.tag,
-        item,
-      ])
-    ).values(),
+  // Open Beauty Facts is a free community service, so ask it for a few things
+  // at a time and stop at a deadline. Brand lookups go first because they
+  // surface products you'll recognize; a few ingredient lookups add variety.
+  // Every product found is scored against your full profile afterward.
+  const jobs: Job[] = [
+    ...SEARCH_BRANDS.map((key): Job => ({ kind: 'brand', key })),
+    ...[
+      ...new Set(
+        [...ingredients.slice(0, 4), ...ingredients.slice(-4)].map(
+          (item) => item.tag
+        )
+      ),
+    ].map((key): Job => ({ kind: 'ingredient', key })),
   ];
 
   const deadline = Date.now() + 50000;
   const results: (PromiseSettledResult<RawProduct[]> | undefined)[] =
-    new Array(queryIngredients.length).fill(undefined);
+    new Array(jobs.length).fill(undefined);
   let next = 0;
 
   async function worker() {
-    while (next < queryIngredients.length && Date.now() < deadline) {
+    while (next < jobs.length && Date.now() < deadline) {
       const index = next++;
 
       try {
         results[index] = {
           status: 'fulfilled',
-          value: await fetchIngredientProducts(
-            queryIngredients[index].tag,
+          value: await fetchProducts(
+            jobs[index],
             Math.max(3000, Math.min(25000, deadline - Date.now()))
           ),
         };
       } catch (reason) {
         console.error(
-          `Ingredient lookup failed (${queryIngredients[index].tag}):`,
+          `Lookup failed (${jobs[index].kind}:${jobs[index].key}):`,
           reason
         );
         results[index] = { status: 'rejected', reason };
