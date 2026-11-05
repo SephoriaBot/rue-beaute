@@ -5,6 +5,7 @@ import { clientIp, throttled } from './_lib/util.js';
 import {
   skinTypes,
   skinConcerns,
+  productCategories,
   getProfileIngredients,
 } from '../src/lib/skinIngredients.js';
 import {
@@ -14,16 +15,7 @@ import {
 
 export const config = { maxDuration: 60 };
 
-type ProductCategory =
-  | 'Cleansers'
-  | 'Toners'
-  | 'Serums & Treatments'
-  | 'Moisturizers'
-  | 'Exfoliators'
-  | 'Sunscreens'
-  | 'Masks'
-  | 'Eye Care'
-  | 'Other';
+type ProductCategory = (typeof productCategories)[number];
 
 type Product = {
   name: string;
@@ -93,7 +85,6 @@ function dedupeKey(brand: string, name: string): string {
   return `${brand}|${name}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-// Warm serverless instances reuse this cache.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const ingredientCache = new Map<
   string,
@@ -157,7 +148,6 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
           )
       : [];
 
-    // Do not recommend products that have no formula data to evaluate.
     if (!ingredientsText && ingredientTags.length === 0) continue;
 
     products.push({
@@ -282,6 +272,18 @@ export default async function handler(
     });
   }
 
+  const requestedCategory =
+    typeof body.category === 'string' ? body.category.trim() : 'All';
+
+  if (
+    requestedCategory !== 'All' &&
+    !productCategories.includes(requestedCategory as ProductCategory)
+  ) {
+    return res.status(400).json({
+      error: 'Please select a valid product category.',
+    });
+  }
+
   const validConcerns = skinConcerns
     .filter((concern) =>
       requestedConcerns.includes(concern.value)
@@ -303,7 +305,16 @@ export default async function handler(
   try {
     const candidates = await searchOpenBeautyFacts(ingredients);
 
-    const ranked = candidates
+    // Apply the category filter before ingredient scoring and ranking.
+    const categoryCandidates =
+      requestedCategory === 'All'
+        ? candidates
+        : candidates.filter(
+            (candidate) =>
+              candidate.product.category === requestedCategory
+          );
+
+    const ranked = categoryCandidates
       .map((candidate) => {
         const product: CheckProduct = {
           name: candidate.product.name,
@@ -343,6 +354,7 @@ export default async function handler(
         skinType: skinType.value,
         sensitive,
         concerns: validConcerns,
+        category: requestedCategory,
       },
     });
   } catch (error) {
