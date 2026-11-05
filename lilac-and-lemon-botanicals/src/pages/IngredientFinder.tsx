@@ -138,6 +138,7 @@ function useLookup(mode: 'brand' | 'product') {
   return { state, run };
 }
 
+
 function CheckCard({
   product,
   result,
@@ -166,16 +167,33 @@ function CheckCard({
           <strong>
             {product.brand} — {product.name}
           </strong>
-          <span className={`check-badge check-${result.verdict}`}>{result.label}</span>
+
+          <span className={`check-badge check-${result.verdict}`}>
+            {result.label}
+          </span>
+
+          <span className="check-note">
+            Ingredient match: {result.score}%
+          </span>
 
           {result.hits.length > 0 && (
             <span className="check-hits">
-              Helps with: {result.hits.slice(0, 5).map((h) => h.name).join(', ')}
-              {result.hits.length > 5 ? ` +${result.hits.length - 5} more` : ''}
+              Profile matches: {result.hits.slice(0, 5).map((h) => h.name).join(', ')}
+              {result.hits.length > 5
+                ? ` +${result.hits.length - 5} more`
+                : ''}
             </span>
           )}
 
-          {result.note && <span className="check-note">{result.note}</span>}
+          {result.flags.length > 0 && (
+            <span className="check-note">
+              Potential sensitivities: {result.flags.join(', ')}
+            </span>
+          )}
+
+          {result.note && (
+            <span className="check-note">{result.note}</span>
+          )}
         </div>
 
         <button
@@ -197,6 +215,7 @@ function CheckCard({
     </li>
   );
 }
+
 
 export default function IngredientFinder() {
   const [selected, setSelected] = useState<string | null>(null);
