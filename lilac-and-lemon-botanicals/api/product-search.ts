@@ -86,6 +86,7 @@ function dedupeKey(brand: string, name: string): string {
 }
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
 const ingredientCache = new Map<
   string,
   { at: number; products: RawProduct[] }
@@ -113,7 +114,6 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
       headers: {
         'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
       },
-      signal: AbortSignal.timeout(15000),
     }
   );
 
@@ -125,7 +125,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
 
   const products: RawProduct[] = [];
 
-  for (const product of data.products ?? []) {
+  for (const product of Array.isArray(data.products) ? data.products : []) {
     const name = cleanText(product.product_name, 150);
     const brand = cleanText(product.brands, 100).split(',')[0].trim();
 
@@ -235,78 +235,82 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const userId = await getUserId(req);
-
-  if (!userId) {
-    return res.status(401).json({
-      error: 'Please log in to search products.',
-    });
-  }
-
-  if (
-    throttled(
-      `product-search:${userId}:${clientIp(req)}`,
-      10,
-      10 * 60 * 1000
-    )
-  ) {
-    return res.status(429).json({
-      error: 'Too many searches. Please try again in a few minutes.',
-    });
-  }
-
-  const body = req.body ?? {};
-  const skinType = skinTypes.find((s) => s.value === body.skinType);
-  const sensitive = body.sensitive === true;
-
-  const requestedConcerns: string[] = Array.isArray(body.concerns)
-    ? body.concerns.filter(
-        (value: unknown): value is string =>
-          typeof value === 'string'
-      )
-    : [];
-
-  if (!skinType) {
-    return res.status(400).json({
-      error: 'Please select a valid skin type.',
-    });
-  }
-
-  const requestedCategory =
-    typeof body.category === 'string' ? body.category.trim() : 'All';
-
-  if (
-    requestedCategory !== 'All' &&
-    !productCategories.includes(requestedCategory as ProductCategory)
-  ) {
-    return res.status(400).json({
-      error: 'Please select a valid product category.',
-    });
-  }
-
-  const validConcerns = skinConcerns
-    .filter((concern) =>
-      requestedConcerns.includes(concern.value)
-    )
-    .map((concern) => concern.value);
-
-  const ingredients = getProfileIngredients(
-    skinType.value,
-    sensitive,
-    validConcerns
-  );
-
-  if (ingredients.length === 0) {
-    return res.status(400).json({
-      error: 'No ingredients were found for this skin profile.',
-    });
-  }
-
   try {
+    const userId = await getUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Please log in to search products.',
+      });
+    }
+
+    if (
+      throttled(
+        `product-search:${userId}:${clientIp(req)}`,
+        10,
+        10 * 60 * 1000
+      )
+    ) {
+      return res.status(429).json({
+        error: 'Too many searches. Please try again in a few minutes.',
+      });
+    }
+
+    const body =
+      req.body && typeof req.body === 'object' ? req.body : {};
+
+    const skinType = skinTypes.find(
+      (skin) => skin.value === body.skinType
+    );
+
+    const sensitive = body.sensitive === true;
+
+    const requestedConcerns: string[] = Array.isArray(body.concerns)
+      ? body.concerns.filter(
+          (value: unknown): value is string =>
+            typeof value === 'string'
+        )
+      : [];
+
+    const requestedCategory =
+      typeof body.category === 'string' ? body.category : 'All';
+
+    if (!skinType) {
+      return res.status(400).json({
+        error: 'Please select a valid skin type.',
+      });
+    }
+
+    if (
+      requestedCategory !== 'All' &&
+      !productCategories.includes(requestedCategory as ProductCategory)
+    ) {
+      return res.status(400).json({
+        error: 'Please select a valid product category.',
+      });
+    }
+
+    const validConcerns = skinConcerns
+      .filter((concern) =>
+        requestedConcerns.includes(concern.value)
+      )
+      .map((concern) => concern.value);
+
+    const ingredients = getProfileIngredients(
+      skinType.value,
+      sensitive,
+      validConcerns
+    );
+
+    if (ingredients.length === 0) {
+      return res.status(400).json({
+        error: 'No ingredients were found for this skin profile.',
+      });
+    }
+
     const candidates = await searchOpenBeautyFacts(ingredients);
 
-    // Apply the category filter before ingredient scoring and ranking.
-    const categoryCandidates =
+    const filteredCandidates =
       requestedCategory === 'All'
         ? candidates
         : candidates.filter(
@@ -314,7 +318,7 @@ export default async function handler(
               candidate.product.category === requestedCategory
           );
 
-    const ranked = categoryCandidates
+    const ranked = filteredCandidates
       .map((candidate) => {
         const product: CheckProduct = {
           name: candidate.product.name,
