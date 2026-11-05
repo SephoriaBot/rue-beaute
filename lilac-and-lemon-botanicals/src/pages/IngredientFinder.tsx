@@ -387,7 +387,10 @@ export default function IngredientFinder() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.error || 'Search failed. Please try again.');
+        throw new Error(
+  data.error ||
+  `Search failed (HTTP ${response.status}). Please try again.`
+);
       }
 
       setSearch({
