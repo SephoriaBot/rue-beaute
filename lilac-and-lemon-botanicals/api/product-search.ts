@@ -103,8 +103,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     ingredients_tags: `en:${tag}`,
     fields:
       'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
-    sort_by: 'unique_scans_n',
-    page_size: '100',
+    page_size: '40',
     json: '1',
   });
 
@@ -114,7 +113,7 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
       headers: {
         'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(10000),
     }
   );
 
@@ -174,18 +173,47 @@ async function searchOpenBeautyFacts(
 ): Promise<Candidate[]> {
   const byKey = new Map<string, Candidate>();
 
-  const results = await Promise.allSettled(
-    ingredients.map((ingredient) =>
-      fetchIngredientProducts(ingredient.tag)
-    )
+  // Open Beauty Facts is a free community service, so ask it for a few
+  // ingredients at a time instead of all at once, and stop at a deadline.
+  const deadline = Date.now() + 40000;
+  const results: (PromiseSettledResult<RawProduct[]> | undefined)[] =
+    new Array(ingredients.length).fill(undefined);
+  let next = 0;
+
+  async function worker() {
+    while (next < ingredients.length && Date.now() < deadline) {
+      const index = next++;
+
+      try {
+        results[index] = {
+          status: 'fulfilled',
+          value: await fetchIngredientProducts(ingredients[index].tag),
+        };
+      } catch (reason) {
+        console.error(
+          `Ingredient lookup failed (${ingredients[index].tag}):`,
+          reason
+        );
+        results[index] = { status: 'rejected', reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: 4 }, worker));
+
+  const finished = results.filter(
+    (result): result is PromiseSettledResult<RawProduct[]> => !!result
   );
 
-  if (results.every((result) => result.status === 'rejected')) {
+  if (
+    finished.length === 0 ||
+    finished.every((result) => result.status === 'rejected')
+  ) {
     throw new Error('UPSTREAM_UNAVAILABLE');
   }
 
   results.forEach((result) => {
-    if (result.status !== 'fulfilled') return;
+    if (!result || result.status !== 'fulfilled') return;
 
     for (const raw of result.value) {
       const key = dedupeKey(raw.brand, raw.name);
