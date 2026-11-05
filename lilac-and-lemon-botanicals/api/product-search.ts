@@ -56,6 +56,103 @@ function cleanUrl(value: unknown): string | null {
   }
 }
 
+// Well-known skincare brands are listed first in results. Add or remove
+// names here (lowercase, no punctuation) to change what gets priority.
+const KNOWN_BRANDS = [
+  'cerave',
+  'cetaphil',
+  'the ordinary',
+  'neutrogena',
+  'la roche posay',
+  'aveeno',
+  'vanicream',
+  'eucerin',
+  'olay',
+  'paulas choice',
+  'paula s choice',
+  'cosrx',
+  'beauty of joseon',
+  'la mer',
+  'clinique',
+  'kiehls',
+  'kiehl s',
+  'drunk elephant',
+  'tatcha',
+  'glow recipe',
+  'first aid beauty',
+  'bioderma',
+  'avene',
+  'vichy',
+  'dove',
+  'nivea',
+  'garnier',
+  'loreal',
+  'l oreal',
+  'maybelline',
+  'burts bees',
+  'burt s bees',
+  'cocokind',
+  'inkey list',
+  'the inkey list',
+  'supergoop',
+  'elf',
+  'e l f',
+  'skinfix',
+  'sunday riley',
+  'youth to the people',
+  'farmacy',
+  'origins',
+  'estee lauder',
+  'lancome',
+  'shiseido',
+  'innisfree',
+  'laneige',
+  'dr jart',
+  'sol de janeiro',
+  'bio oil',
+  'murad',
+  'peter thomas roth',
+  'skinceuticals',
+  'differin',
+  'curel',
+  'jergens',
+  'st ives',
+  'pond s',
+  'ponds',
+  'simple',
+  'biossance',
+  'summer fridays',
+  'ole henriksen',
+  'fresh',
+  'herbivore',
+  'mario badescu',
+  'acure',
+  'alba botanica',
+  'dr bronner s',
+  'badger',
+  'derma e',
+  'versed',
+  'naturium',
+  'good molecules',
+  'bubble',
+  'byoma',
+  'hero cosmetics',
+  'topicals',
+];
+
+function isKnownBrand(brand: string): boolean {
+  const normalized = brand
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  return KNOWN_BRANDS.some(
+    (known) => normalized === known || normalized.startsWith(`${known} `)
+  );
+}
+
 function cleanText(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
 }
@@ -101,29 +198,48 @@ async function fetchIngredientProducts(
     return cached.products;
   }
 
-  const params = new URLSearchParams({
-    ingredients_tags: `en:${tag}`,
-    fields:
-      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
-    page_size: '40',
-    json: '1',
-  });
+  // Sorting by most-scanned surfaces products people actually recognize, but
+  // it is the slow part of the query. Try it first, and if the database times
+  // out, retry once without it so the search still finishes.
+  async function request(sorted: boolean, ms: number) {
+    const params = new URLSearchParams({
+      ingredients_tags: `en:${tag}`,
+      fields:
+        'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags',
+      page_size: sorted ? '60' : '100',
+      json: '1',
+    });
 
-  const response = await fetch(
-    `https://world.openbeautyfacts.org/api/v2/search?${params}`,
-    {
-      headers: {
-        'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
-      },
-      signal: AbortSignal.timeout(timeoutMs),
-    }
-  );
+    if (sorted) params.set('sort_by', 'unique_scans_n');
 
-  if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
+    const response = await fetch(
+      `https://world.openbeautyfacts.org/api/v2/search?${params}`,
+      {
+        headers: {
+          'User-Agent': 'RueBeaute/1.0 (ingredient finder)',
+        },
+        signal: AbortSignal.timeout(ms),
+      }
+    );
 
-  const data = (await response.json()) as {
-    products?: Record<string, unknown>[];
-  };
+    if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
+
+    return (await response.json()) as {
+      products?: Record<string, unknown>[];
+    };
+  }
+
+  const startedAt = Date.now();
+  let data: { products?: Record<string, unknown>[] };
+
+  try {
+    data = await request(true, Math.min(timeoutMs, 15000));
+  } catch {
+    data = await request(
+      false,
+      Math.max(2000, timeoutMs - (Date.now() - startedAt))
+    );
+  }
 
   const products: RawProduct[] = [];
 
@@ -395,6 +511,11 @@ export default async function handler(
       })
       .filter((product) => product.verdict !== 'unknown')
       .sort((a, b) => {
+        const knownA = isKnownBrand(a.brand);
+        const knownB = isKnownBrand(b.brand);
+
+        // Brands you're likely to recognize come first, then best fit.
+        if (knownA !== knownB) return Number(knownB) - Number(knownA);
         if (b.score !== a.score) return b.score - a.score;
         return Number(!!b.imageUrl) - Number(!!a.imageUrl);
       })
