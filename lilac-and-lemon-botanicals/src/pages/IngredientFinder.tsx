@@ -8,7 +8,14 @@ import {
   productCategories,
   getProfileIngredients,
 } from '../lib/skinIngredients';
+import {
+  checkProduct,
+  verdictRank,
+  type CheckProduct,
+  type CheckResult,
+} from '../lib/ingredientCheck';
 import './ingredient-finder.css';
+import './ingredient-check.css';
 
 type Product = {
   name: string;
@@ -30,6 +37,167 @@ type SearchState = {
   profileKey: string;
 };
 
+type Tab = 'matches' | 'brands' | 'mine';
+
+type Lookup = {
+  loading: boolean;
+  error: string | null;
+  query: string;
+  items: CheckProduct[] | null;
+  skipped: number;
+};
+
+const BRANDS_KEY = 'rue-fav-brands';
+const SHELF_KEY = 'rue-my-products';
+
+function loadList<T>(key: string, clean: (value: unknown) => T | null): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(clean).filter((item): item is T => item !== null);
+  } catch {
+    return [];
+  }
+}
+
+function saveList(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be blocked; the page still works without saving.
+  }
+}
+
+function cleanBrand(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : null;
+}
+
+function cleanShelfItem(value: unknown): CheckProduct | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.name !== 'string' || typeof v.brand !== 'string') return null;
+  return {
+    name: v.name.slice(0, 150),
+    brand: v.brand.slice(0, 100),
+    imageUrl: typeof v.imageUrl === 'string' ? v.imageUrl : null,
+    tags: Array.isArray(v.tags)
+      ? v.tags.filter((t): t is string => typeof t === 'string').slice(0, 200)
+      : [],
+    text: typeof v.text === 'string' ? v.text.slice(0, 1500) : '',
+  };
+}
+
+function itemKey(product: CheckProduct): string {
+  return `${product.brand}|${product.name}`.toLowerCase();
+}
+
+function useLookup(mode: 'brand' | 'product') {
+  const { apiFetch } = useApi();
+  const [state, setState] = useState<Lookup | null>(null);
+
+  async function run(query: string) {
+    const q = query.trim();
+    if (q.length < 2) return;
+
+    setState({ loading: true, error: null, query: q, items: null, skipped: 0 });
+
+    try {
+      const response = await apiFetch('/api/product-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, query: q }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Lookup failed. Please try again.');
+      }
+
+      setState({
+        loading: false,
+        error: null,
+        query: q,
+        items: data.products ?? [],
+        skipped: data.skipped ?? 0,
+      });
+    } catch (error) {
+      setState({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : 'Lookup failed. Please try again.',
+        query: q,
+        items: null,
+        skipped: 0,
+      });
+    }
+  }
+
+  return { state, run };
+}
+
+function CheckCard({
+  product,
+  result,
+  actionLabel,
+  onAction,
+  actionDisabled,
+}: {
+  product: CheckProduct;
+  result: CheckResult;
+  actionLabel: string;
+  onAction: () => void;
+  actionDisabled?: boolean;
+}) {
+  return (
+    <li className="check-card">
+      <div className="check-card-main">
+        {product.imageUrl ? (
+          <img src={product.imageUrl} alt="" loading="lazy" />
+        ) : (
+          <div className="product-placeholder">
+            <span>RB</span>
+          </div>
+        )}
+
+        <div className="check-card-info">
+          <strong>
+            {product.brand} — {product.name}
+          </strong>
+          <span className={`check-badge check-${result.verdict}`}>{result.label}</span>
+
+          {result.hits.length > 0 && (
+            <span className="check-hits">
+              Helps with: {result.hits.slice(0, 5).map((h) => h.name).join(', ')}
+              {result.hits.length > 5 ? ` +${result.hits.length - 5} more` : ''}
+            </span>
+          )}
+
+          {result.note && <span className="check-note">{result.note}</span>}
+        </div>
+
+        <button
+          type="button"
+          className="check-action"
+          disabled={actionDisabled}
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      </div>
+
+      {product.text && (
+        <details className="check-details">
+          <summary>Full ingredient list</summary>
+          <p>{product.text}</p>
+        </details>
+      )}
+    </li>
+  );
+}
+
 export default function IngredientFinder() {
   const [selected, setSelected] = useState<string | null>(null);
   const [sensitive, setSensitive] = useState(false);
@@ -37,6 +205,23 @@ export default function IngredientFinder() {
   const [search, setSearch] = useState<SearchState | null>(null);
   const [openTag, setOpenTag] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string[]>([]);
+
+  const [tab, setTab] = useState<Tab>('matches');
+  const [brandInput, setBrandInput] = useState('');
+  const [productInput, setProductInput] = useState('');
+  const [showAllBrand, setShowAllBrand] = useState(false);
+  const [favBrands, setFavBrands] = useState<string[]>(() =>
+    loadList(BRANDS_KEY, cleanBrand)
+  );
+  const [shelf, setShelf] = useState<CheckProduct[]>(() =>
+    loadList(SHELF_KEY, cleanShelfItem)
+  );
+  const [manualName, setManualName] = useState('');
+  const [manualBrand, setManualBrand] = useState('');
+  const [manualText, setManualText] = useState('');
+
+  const brandLookup = useLookup('brand');
+  const productLookup = useLookup('product');
 
   const { isSignedIn } = useAuth();
   const { apiFetch } = useApi();
@@ -49,8 +234,7 @@ export default function IngredientFinder() {
     concerns: [...concerns].sort(),
   });
 
-  const visibleSearch =
-    search?.profileKey === profileKey ? search : null;
+  const visibleSearch = search?.profileKey === profileKey ? search : null;
 
   const ingredients = current
     ? getProfileIngredients(selected!, sensitive, concerns)
@@ -58,6 +242,10 @@ export default function IngredientFinder() {
 
   const openIngredient =
     ingredients.find((ingredient) => ingredient.tag === openTag) ?? null;
+
+  function score(product: CheckProduct): CheckResult {
+    return checkProduct(product, selected ?? '', sensitive, concerns);
+  }
 
   function toggleExpanded(category: string) {
     setExpanded((previous) =>
@@ -73,6 +261,56 @@ export default function IngredientFinder() {
         ? previous.filter((item) => item !== value)
         : [...previous, value]
     );
+  }
+
+  function saveBrand(name: string) {
+    const clean = name.trim();
+    if (!clean) return;
+    if (favBrands.some((b) => b.toLowerCase() === clean.toLowerCase())) return;
+    const next = [...favBrands, clean].slice(0, 30);
+    setFavBrands(next);
+    saveList(BRANDS_KEY, next);
+  }
+
+  function removeBrand(name: string) {
+    const next = favBrands.filter((b) => b !== name);
+    setFavBrands(next);
+    saveList(BRANDS_KEY, next);
+  }
+
+  function addToShelf(product: CheckProduct) {
+    if (shelf.some((item) => itemKey(item) === itemKey(product))) return;
+    const next = [...shelf, product].slice(0, 50);
+    setShelf(next);
+    saveList(SHELF_KEY, next);
+  }
+
+  function removeFromShelf(product: CheckProduct) {
+    const next = shelf.filter((item) => itemKey(item) !== itemKey(product));
+    setShelf(next);
+    saveList(SHELF_KEY, next);
+  }
+
+  function addManual() {
+    const name = manualName.trim();
+    const text = manualText.trim();
+    if (!name || !text) return;
+    addToShelf({
+      name: name.slice(0, 150),
+      brand: manualBrand.trim().slice(0, 100) || 'My product',
+      imageUrl: null,
+      tags: [],
+      text: text.slice(0, 1500),
+    });
+    setManualName('');
+    setManualBrand('');
+    setManualText('');
+  }
+
+  function runBrand(name: string) {
+    setBrandInput(name);
+    setShowAllBrand(false);
+    brandLookup.run(name);
   }
 
   async function findProducts() {
@@ -124,6 +362,25 @@ export default function IngredientFinder() {
     }
   }
 
+  const brandScored = (brandLookup.state?.items ?? [])
+    .map((product) => ({ product, result: score(product) }))
+    .sort(
+      (a, b) =>
+        verdictRank[b.result.verdict] - verdictRank[a.result.verdict] ||
+        b.result.hits.length - a.result.hits.length
+    );
+
+  const brandShown = showAllBrand ? brandScored : brandScored.slice(0, 12);
+  const brandSaved =
+    !!brandLookup.state &&
+    favBrands.some((b) => b.toLowerCase() === brandLookup.state!.query.toLowerCase());
+
+  const signInNote = (
+    <p className="ingredient-login">
+      <Link to="/login">Log in</Link> to look up products.
+    </p>
+  );
+
   return (
     <main className="ingredient-page">
       <div className="wrap ingredient-wrap">
@@ -131,8 +388,8 @@ export default function IngredientFinder() {
           <p className="ingredient-eyebrow">PERSONALIZED SKINCARE RESEARCH</p>
           <h1>Ingredient Finder</h1>
           <p>
-            Build your skin profile to discover ingredients and skincare
-            products that may suit your needs.
+            Build your skin profile, then find products, browse brands you
+            like, or check what you already own.
           </p>
         </header>
 
@@ -165,9 +422,7 @@ export default function IngredientFinder() {
             <span className="ingredient-step">02</span>
             <div>
               <h2>Skin sensitivity</h2>
-              <p>
-                Sensitivity can be present with any skin type.
-              </p>
+              <p>Sensitivity can be present with any skin type.</p>
             </div>
           </div>
 
@@ -192,9 +447,7 @@ export default function IngredientFinder() {
             <span className="ingredient-step">03</span>
             <div>
               <h2>Skin concerns</h2>
-              <p>
-                Choose any concerns you'd like your routine to address.
-              </p>
+              <p>Choose any concerns you'd like your routine to address.</p>
             </div>
           </div>
 
@@ -221,6 +474,38 @@ export default function IngredientFinder() {
         </section>
 
         {current && (
+          <div className="check-tabs" role="tablist" aria-label="What would you like to do?">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'matches'}
+              className={`check-tab${tab === 'matches' ? ' active' : ''}`}
+              onClick={() => setTab('matches')}
+            >
+              Find products
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'brands'}
+              className={`check-tab${tab === 'brands' ? ' active' : ''}`}
+              onClick={() => setTab('brands')}
+            >
+              Browse a brand
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'mine'}
+              className={`check-tab${tab === 'mine' ? ' active' : ''}`}
+              onClick={() => setTab('mine')}
+            >
+              My products{shelf.length > 0 ? ` (${shelf.length})` : ''}
+            </button>
+          </div>
+        )}
+
+        {current && tab === 'matches' && (
           <section className="ingredient-profile">
             <div className="ingredient-section-heading">
               <span className="ingredient-step">04</span>
@@ -265,9 +550,7 @@ export default function IngredientFinder() {
                     : 'Find matching products'}
                 </button>
               ) : (
-                <p className="ingredient-login">
-                  <Link to="/login">Log in</Link> to search for products.
-                </p>
+                signInNote
               )}
 
               {visibleSearch?.loading && (
@@ -307,10 +590,7 @@ export default function IngredientFinder() {
                       const shown = isOpen ? products : products.slice(0, 5);
 
                       return (
-                        <section
-                          className="ingredient-category"
-                          key={category}
-                        >
+                        <section className="ingredient-category" key={category}>
                           <div className="ingredient-category-heading">
                             <h3>{category}</h3>
                             <span>{products.length}</span>
@@ -323,11 +603,7 @@ export default function IngredientFinder() {
                                 className="product-result"
                               >
                                 {product.imageUrl ? (
-                                  <img
-                                    src={product.imageUrl}
-                                    alt=""
-                                    loading="lazy"
-                                  />
+                                  <img src={product.imageUrl} alt="" loading="lazy" />
                                 ) : (
                                   <div className="product-placeholder">
                                     <span>RB</span>
@@ -340,9 +616,7 @@ export default function IngredientFinder() {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                   >
-                                    {product.brand
-                                      ? `${product.brand} — `
-                                      : ''}
+                                    {product.brand ? `${product.brand} — ` : ''}
                                     {product.name} ↗
                                   </a>
 
@@ -368,9 +642,7 @@ export default function IngredientFinder() {
                               className="ingredient-more"
                               onClick={() => toggleExpanded(category)}
                             >
-                              {isOpen
-                                ? 'Show fewer'
-                                : `Show ${products.length - 5} more`}
+                              {isOpen ? 'Show fewer' : `Show ${products.length - 5} more`}
                             </button>
                           )}
                         </section>
@@ -387,6 +659,282 @@ export default function IngredientFinder() {
                 </div>
               )}
             </div>
+          </section>
+        )}
+
+        {current && tab === 'brands' && (
+          <section className="check-panel">
+            <div className="ingredient-product-heading">
+              <h2>Browse a brand</h2>
+              <p>
+                Pick a brand you like and see which of its products fit your
+                skin profile.
+              </p>
+            </div>
+
+            {!isSignedIn ? (
+              signInNote
+            ) : (
+              <>
+                <form
+                  className="check-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    runBrand(brandInput);
+                  }}
+                >
+                  <input
+                    type="text"
+                    value={brandInput}
+                    maxLength={80}
+                    placeholder="e.g. CeraVe, The Ordinary, La Roche-Posay"
+                    onChange={(event) => setBrandInput(event.target.value)}
+                    aria-label="Brand name"
+                  />
+                  <button
+                    type="submit"
+                    className="ingredient-find"
+                    disabled={brandLookup.state?.loading || brandInput.trim().length < 2}
+                  >
+                    {brandLookup.state?.loading ? 'Looking up…' : 'Look up brand'}
+                  </button>
+                </form>
+
+                {favBrands.length > 0 && (
+                  <div className="check-favs">
+                    <small>Your brands</small>
+                    <div>
+                      {favBrands.map((brand) => (
+                        <span className="check-fav" key={brand}>
+                          <button type="button" onClick={() => runBrand(brand)}>
+                            {brand}
+                          </button>
+                          <button
+                            type="button"
+                            className="check-fav-x"
+                            aria-label={`Remove ${brand}`}
+                            onClick={() => removeBrand(brand)}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {brandLookup.state?.error && (
+                  <p className="ingredient-error">{brandLookup.state.error}</p>
+                )}
+
+                {brandLookup.state?.items && (
+                  <div className="check-results">
+                    <div className="check-results-head">
+                      <h3>
+                        {brandScored.length} product
+                        {brandScored.length === 1 ? '' : 's'} from {brandLookup.state.query}
+                      </h3>
+                      {!brandSaved && brandScored.length > 0 && (
+                        <button
+                          type="button"
+                          className="ingredient-more"
+                          onClick={() => saveBrand(brandLookup.state!.query)}
+                        >
+                          ☆ Save this brand
+                        </button>
+                      )}
+                    </div>
+
+                    {brandScored.length === 0 ? (
+                      <p className="ingredient-note">
+                        No products with ingredient lists were found for that
+                        brand. Check the spelling, or try the My products tab to
+                        paste an ingredient list yourself.
+                      </p>
+                    ) : (
+                      <ul className="check-list">
+                        {brandShown.map(({ product, result }) => (
+                          <CheckCard
+                            key={itemKey(product)}
+                            product={product}
+                            result={result}
+                            actionLabel={
+                              shelf.some((s) => itemKey(s) === itemKey(product))
+                                ? 'On my shelf'
+                                : '+ My shelf'
+                            }
+                            actionDisabled={shelf.some((s) => itemKey(s) === itemKey(product))}
+                            onAction={() => addToShelf(product)}
+                          />
+                        ))}
+                      </ul>
+                    )}
+
+                    {brandScored.length > 12 && (
+                      <button
+                        type="button"
+                        className="ingredient-more"
+                        onClick={() => setShowAllBrand(!showAllBrand)}
+                      >
+                        {showAllBrand ? 'Show fewer' : `Show ${brandScored.length - 12} more`}
+                      </button>
+                    )}
+
+                    {brandLookup.state.skipped > 0 && (
+                      <p className="ingredient-note">
+                        {brandLookup.state.skipped} listing
+                        {brandLookup.state.skipped === 1 ? ' was' : 's were'} left
+                        out because no ingredient list was available.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            <p className="ingredient-disclaimer">
+              Fit is based on which helpful ingredients appear on the list, not
+              how much of each is in the formula. Listings come from a
+              community database and can be out of date, so check the current
+              packaging.
+            </p>
+          </section>
+        )}
+
+        {current && tab === 'mine' && (
+          <section className="check-panel">
+            <div className="ingredient-product-heading">
+              <h2>My products</h2>
+              <p>
+                Add what you already use to see how each one fits your current
+                profile. Your shelf is saved on this device.
+              </p>
+            </div>
+
+            {shelf.length === 0 ? (
+              <p className="ingredient-note check-center">
+                Nothing on your shelf yet. Search below or paste an ingredient
+                list.
+              </p>
+            ) : (
+              <ul className="check-list">
+                {shelf.map((product) => (
+                  <CheckCard
+                    key={itemKey(product)}
+                    product={product}
+                    result={score(product)}
+                    actionLabel="Remove"
+                    onAction={() => removeFromShelf(product)}
+                  />
+                ))}
+              </ul>
+            )}
+
+            <div className="check-add">
+              <h3>Add a product</h3>
+
+              {!isSignedIn ? (
+                signInNote
+              ) : (
+                <>
+                  <form
+                    className="check-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      productLookup.run(productInput);
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={productInput}
+                      maxLength={80}
+                      placeholder="Brand and product, e.g. CeraVe moisturizing cream"
+                      onChange={(event) => setProductInput(event.target.value)}
+                      aria-label="Product name"
+                    />
+                    <button
+                      type="submit"
+                      className="ingredient-find"
+                      disabled={productLookup.state?.loading || productInput.trim().length < 2}
+                    >
+                      {productLookup.state?.loading ? 'Searching…' : 'Search'}
+                    </button>
+                  </form>
+
+                  {productLookup.state?.error && (
+                    <p className="ingredient-error">{productLookup.state.error}</p>
+                  )}
+
+                  {productLookup.state?.items &&
+                    (productLookup.state.items.length === 0 ? (
+                      <p className="ingredient-note">
+                        No products found. Try fewer words, or paste the
+                        ingredient list below.
+                      </p>
+                    ) : (
+                      <ul className="check-list">
+                        {productLookup.state.items.map((product) => (
+                          <CheckCard
+                            key={itemKey(product)}
+                            product={product}
+                            result={score(product)}
+                            actionLabel={
+                              shelf.some((s) => itemKey(s) === itemKey(product))
+                                ? 'On my shelf'
+                                : '+ My shelf'
+                            }
+                            actionDisabled={shelf.some((s) => itemKey(s) === itemKey(product))}
+                            onAction={() => addToShelf(product)}
+                          />
+                        ))}
+                      </ul>
+                    ))}
+                </>
+              )}
+
+              <details className="check-manual">
+                <summary>Can't find it? Paste the ingredient list</summary>
+                <input
+                  type="text"
+                  value={manualBrand}
+                  maxLength={100}
+                  placeholder="Brand"
+                  onChange={(event) => setManualBrand(event.target.value)}
+                  aria-label="Brand"
+                />
+                <input
+                  type="text"
+                  value={manualName}
+                  maxLength={150}
+                  placeholder="Product name"
+                  onChange={(event) => setManualName(event.target.value)}
+                  aria-label="Product name"
+                />
+                <textarea
+                  value={manualText}
+                  maxLength={1500}
+                  rows={5}
+                  placeholder="Paste the ingredients from the back of the package, separated by commas"
+                  onChange={(event) => setManualText(event.target.value)}
+                  aria-label="Ingredient list"
+                />
+                <button
+                  type="button"
+                  className="ingredient-find"
+                  disabled={!manualName.trim() || !manualText.trim()}
+                  onClick={addManual}
+                >
+                  Add to my shelf
+                </button>
+              </details>
+            </div>
+
+            <p className="ingredient-disclaimer">
+              Fit is based on which helpful ingredients appear on the list, not
+              how much of each is in the formula. A weak fit doesn't mean a
+              product is bad, only that it has little of what your profile
+              looks for.
+            </p>
           </section>
         )}
 
