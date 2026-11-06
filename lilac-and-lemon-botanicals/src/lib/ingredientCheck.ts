@@ -1,4 +1,3 @@
-
 import {
   getProfileIngredients,
   skinTypes,
@@ -79,20 +78,164 @@ function canonical(value: string): string {
   return ALIASES[normalized] ?? normalized;
 }
 
-function extractIngredients(product: CheckProduct): Set<string> {
-  const found = new Set<string>();
+/* -------------------------------------------------------------------------
+ * Roles
+ *
+ * Ingredients do jobs. Glycerin and sodium hyaluronate both hydrate, so a
+ * product shouldn't lose points for having one instead of the other. We score
+ * how well a product covers the JOBS a skin profile needs, not how many names
+ * from a long list it happens to contain.
+ * ---------------------------------------------------------------------- */
+
+type Role =
+  | 'hydration'
+  | 'barrier'
+  | 'soothing'
+  | 'antioxidant'
+  | 'tone'
+  | 'exfoliant'
+  | 'clarifying'
+  | 'antiaging';
+
+const ROLE_LABELS: Record<Role, string> = {
+  hydration: 'hydration',
+  barrier: 'barrier support',
+  soothing: 'soothing',
+  antioxidant: 'antioxidant support',
+  tone: 'tone support',
+  exfoliant: 'gentle exfoliation',
+  clarifying: 'oil and pore balance',
+  antiaging: 'smoothing support',
+};
+
+const ROLE_BY_TAG: Record<string, Role[]> = {
+  // Hydration
+  'glycerin': ['hydration'],
+  'sodium-hyaluronate': ['hydration'],
+  'sodium-pca': ['hydration'],
+  'urea': ['hydration'],
+  'serine': ['hydration'],
+  'ectoin': ['hydration', 'soothing'],
+  'beta-glucan': ['hydration', 'soothing'],
+  'aloe-barbadensis-leaf-juice': ['hydration', 'soothing'],
+  'panthenol': ['hydration', 'soothing'],
+
+  // Barrier / emollients
+  'squalane': ['barrier'],
+  'ceramide-np': ['barrier'],
+  'cholesterol': ['barrier'],
+  'linoleic-acid': ['barrier'],
+  'butyrospermum-parkii-butter': ['barrier'],
+  'mangifera-indica-seed-butter': ['barrier'],
+  'simmondsia-chinensis-seed-oil': ['barrier'],
+  'limnanthes-alba-seed-oil': ['barrier'],
+
+  // Soothing
+  'allantoin': ['soothing'],
+  'avena-sativa-kernel-flour': ['soothing'],
+  'centella-asiatica-extract': ['soothing'],
+  'bisabolol': ['soothing'],
+  'madecassoside': ['soothing'],
+  'dipotassium-glycyrrhizate': ['soothing'],
+
+  // Antioxidants
+  'tocopherol': ['antioxidant'],
+  'ubiquinone': ['antioxidant'],
+  'ferulic-acid': ['antioxidant'],
+  'camellia-sinensis-leaf-extract': ['antioxidant', 'soothing'],
+  'ascorbic-acid': ['antioxidant', 'tone'],
+
+  // Tone / brightening
+  'niacinamide': ['tone', 'barrier'],
+  'glycyrrhiza-glabra-root-extract': ['tone', 'soothing'],
+  'tranexamic-acid': ['tone'],
+  'alpha-arbutin': ['tone'],
+  'kojic-acid': ['tone'],
+  'azelaic-acid': ['tone', 'clarifying'],
+
+  // Exfoliants
+  'lactic-acid': ['exfoliant'],
+  'gluconolactone': ['exfoliant'],
+  'mandelic-acid': ['exfoliant'],
+  'papain': ['exfoliant'],
+  'salicylic-acid': ['exfoliant', 'clarifying'],
+
+  // Oil / pore balance
+  'zinc-pca': ['clarifying'],
+  'sulfur': ['clarifying'],
+  'benzoyl-peroxide': ['clarifying'],
+  'hamamelis-virginiana-water': ['clarifying'],
+  'carnitine': ['clarifying'],
+
+  // Smoothing
+  'retinol': ['antiaging'],
+  'bakuchiol': ['antiaging'],
+  'palmitoyl-tripeptide-1': ['antiaging'],
+};
+
+const ROLES_BY_CANONICAL = new Map<string, Role[]>(
+  Object.entries(ROLE_BY_TAG).map(([tag, roles]) => [
+    canonical(tag.replace(/-/g, ' ')),
+    roles,
+  ])
+);
+
+function rolesOfTag(tag: string): Role[] {
+  return ROLE_BY_TAG[tag] ?? [];
+}
+
+// The jobs a skin type genuinely needs: any job that several of its
+// recommended ingredients share. One-off extras are nice, not required.
+function coreRoles(skinType: string, sensitive: boolean): Role[] {
+  const primary = skinTypes.find((skin) => skin.value === skinType);
+  if (!primary) return [];
+
+  const list = [
+    ...primary.ingredients,
+    ...(sensitive ? sensitiveIngredients : []),
+  ];
+
+  const counts = new Map<Role, number>();
+
+  for (const ingredient of list) {
+    for (const role of rolesOfTag(ingredient.tag)) {
+      counts.set(role, (counts.get(role) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 3)
+    .map(([role]) => role);
+}
+
+/* -------------------------------------------------------------------------
+ * Reading the product
+ * ---------------------------------------------------------------------- */
+
+// Returns each ingredient with a weight: 1 for a normal listing, 0.5 for
+// ingredients far down a long list, which are usually present in trace amounts.
+function extractIngredients(product: CheckProduct): Map<string, number> {
+  const found = new Map<string, number>();
+
+  const add = (value: string, weight: number) => {
+    if (!value) return;
+    if ((found.get(value) ?? 0) < weight) found.set(value, weight);
+  };
 
   for (const tag of product.tags) {
-    const value = canonical(tag.replace(/-/g, ' '));
-    if (value) found.add(value);
+    add(canonical(tag.replace(/-/g, ' ')), 1);
   }
 
   const text = product.text.replace(/^\s*ingredients?\s*:?/i, '');
+  const pieces = text
+    .split(/[,;]/)
+    .map((piece) => canonical(piece))
+    .filter(Boolean);
 
-  for (const piece of text.split(/[,;]/)) {
-    const value = canonical(piece);
-    if (value) found.add(value);
-  }
+  pieces.forEach((value, index) => {
+    const trace = pieces.length > 15 && index >= 12;
+    add(value, trace ? 0.5 : 1);
+  });
 
   return found;
 }
@@ -148,34 +291,9 @@ const WATCH: {
   },
 ];
 
-function getIngredientWeight(
-  ingredient: Ingredient,
-  skinType: string,
-  sensitive: boolean,
-  concerns: string[]
-): number {
-  const primary = skinTypes.find((skin) => skin.value === skinType);
-
-  const isConcernMatch = skinConcerns
-    .filter((concern) => concerns.includes(concern.value))
-    .some((concern) =>
-      concern.ingredients.some((item) => item.tag === ingredient.tag)
-    );
-
-  const isSensitiveMatch =
-    sensitive &&
-    sensitiveIngredients.some((item) => item.tag === ingredient.tag);
-
-  const isPrimaryMatch =
-    primary?.ingredients.some((item) => item.tag === ingredient.tag) ?? false;
-
-  // Concern-specific ingredients carry the most weight.
-  if (isConcernMatch) return 3;
-  if (isSensitiveMatch) return 2;
-  if (isPrimaryMatch) return 1.5;
-
-  return 1;
-}
+/* -------------------------------------------------------------------------
+ * Scoring
+ * ---------------------------------------------------------------------- */
 
 export function checkProduct(
   product: CheckProduct,
@@ -183,12 +301,7 @@ export function checkProduct(
   sensitive: boolean,
   concerns: string[]
 ): CheckResult {
-  const profile = getProfileIngredients(
-    skinType,
-    sensitive,
-    concerns
-  );
-
+  const profile = getProfileIngredients(skinType, sensitive, concerns);
   const have = extractIngredients(product);
 
   if (have.size === 0) {
@@ -207,60 +320,119 @@ export function checkProduct(
   );
 
   const flags = WATCH
-    .filter((watch) => [...have].some(watch.test))
+    .filter((watch) => [...have.keys()].some(watch.test))
     .map((watch) => watch.label);
 
-  const totalWeight = profile.reduce(
-    (total, ingredient) =>
-      total +
-      getIngredientWeight(ingredient, skinType, sensitive, concerns),
-    0
-  );
+  // How well does the product cover the jobs this skin type needs?
+  const credit = new Map<Role, number>();
 
-  const matchedWeight = hits.reduce(
-    (total, ingredient) =>
-      total +
-      getIngredientWeight(ingredient, skinType, sensitive, concerns),
-    0
-  );
-
-  const coverage =
-    totalWeight > 0 ? (matchedWeight / totalWeight) * 100 : 0;
-
-  let level =
-    coverage >= 30 ? 3 :
-    coverage >= 18 ? 2 :
-    coverage >= 8 ? 1 : 0;
-
-  // Potential sensitivity flags lower the rating by one level.
-  if (sensitive && flags.length > 0) {
-    level = Math.max(0, level - 1);
+  for (const [value, weight] of have) {
+    for (const role of ROLES_BY_CANONICAL.get(value) ?? []) {
+      credit.set(role, Math.max(credit.get(role) ?? 0, weight));
+    }
   }
 
-  const verdict = (
-    ['limited', 'okay', 'good', 'great'] as const
-  )[level];
+  const core = coreRoles(skinType, sensitive);
 
+  const coreCoverage =
+    core.length > 0
+      ? core.reduce((total, role) => total + (credit.get(role) ?? 0), 0) /
+        core.length
+      : 0;
+
+  // Does it contain at least one ingredient for each selected concern?
+  const selectedConcerns = skinConcerns.filter((concern) =>
+    concerns.includes(concern.value)
+  );
+
+  const concernCredit = selectedConcerns.map((concern) =>
+    concern.ingredients.reduce((best, ingredient) => {
+      const weight =
+        have.get(canonical(ingredient.tag.replace(/-/g, ' '))) ?? 0;
+      return Math.max(best, weight);
+    }, 0)
+  );
+
+  const concernCoverage =
+    concernCredit.length > 0
+      ? concernCredit.reduce((total, value) => total + value, 0) /
+        concernCredit.length
+      : 0;
+
+  const parts: { value: number; weight: number }[] = [];
+  if (core.length > 0) parts.push({ value: coreCoverage, weight: 0.6 });
+  if (selectedConcerns.length > 0) {
+    parts.push({ value: concernCoverage, weight: 0.4 });
+  }
+
+  const totalPartWeight = parts.reduce((total, part) => total + part.weight, 0);
+
+  const score =
+    totalPartWeight > 0
+      ? (parts.reduce((total, part) => total + part.value * part.weight, 0) /
+          totalPartWeight) *
+        100
+      : 0;
+
+  let level = score >= 75 ? 3 : score >= 55 ? 2 : score >= 30 ? 1 : 0;
+
+  // Potential irritants only lower the rating for sensitive skin.
+  if (sensitive && flags.length > 0) {
+    level = Math.max(0, level - (flags.length >= 2 ? 2 : 1));
+  }
+
+  const verdict = (['limited', 'okay', 'good', 'great'] as const)[level];
+
+  // Explain the result in plain language.
   const noteParts: string[] = [];
 
-  if (hits.length > 0) {
+  if (core.length === 0 && selectedConcerns.length === 0) {
+    noteParts.push('Pick a skin type or concern to see how well this fits');
+  }
+
+  const coveredCore = core.filter((role) => (credit.get(role) ?? 0) > 0);
+  const missingCore = core.filter((role) => (credit.get(role) ?? 0) === 0);
+
+  if (coveredCore.length > 0) {
     noteParts.push(
-      `${hits.length} profile ingredient${hits.length === 1 ? '' : 's'} found`
+      `Covers ${coveredCore.map((role) => ROLE_LABELS[role]).join(', ')}`
     );
-  } else {
-    noteParts.push('Few or none of your profile ingredients were found');
+  }
+
+  if (missingCore.length > 0) {
+    noteParts.push(
+      `Light on ${missingCore.map((role) => ROLE_LABELS[role]).join(', ')}`
+    );
+  }
+
+  const hitConcerns = selectedConcerns.filter(
+    (_, index) => concernCredit[index] > 0
+  );
+  const missedConcerns = selectedConcerns.filter(
+    (_, index) => concernCredit[index] === 0
+  );
+
+  if (hitConcerns.length > 0) {
+    noteParts.push(
+      `Targets ${hitConcerns.map((c) => c.label.toLowerCase()).join(', ')}`
+    );
+  }
+
+  if (missedConcerns.length > 0) {
+    noteParts.push(
+      `Does not specifically target ${missedConcerns
+        .map((c) => c.label.toLowerCase())
+        .join(', ')}`
+    );
   }
 
   if (flags.length > 0) {
-    noteParts.push(
-      `Contains ${flags.join(', ').toLowerCase()}`
-    );
-  }
-
-  if (sensitive && flags.length > 0) {
-    noteParts.push(
-      'These ingredients may be worth reviewing if your skin is sensitive'
-    );
+    noteParts.push(`Contains ${flags.join(', ').toLowerCase()}`);
+    if (sensitive) {
+      noteParts.push(
+        'These may be worth reviewing if your skin is sensitive'
+      );
+    }
   }
 
   return {
@@ -268,7 +440,7 @@ export function checkProduct(
     label: LABELS[verdict],
     hits,
     flags,
-    note: `${noteParts.join('. ')}.`,
-    score: Math.round(coverage),
+    note: noteParts.length > 0 ? `${noteParts.join('. ')}.` : '',
+    score: Math.round(score),
   };
 }
