@@ -421,7 +421,7 @@ export default function IngredientFinder() {
     .sort(
       (a, b) =>
         verdictRank[b.result.verdict] - verdictRank[a.result.verdict] ||
-        b.result.hits.length - a.result.hits.length
+        b.result.score - a.result.score
     );
 
   const brandShown = showAllBrand ? brandScored : brandScored.slice(0, 12);
