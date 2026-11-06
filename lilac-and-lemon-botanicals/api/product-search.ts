@@ -1,3 +1,4 @@
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getUserId } from './_lib/auth.js';
 import { clientIp, throttled } from './_lib/util.js';
@@ -7,6 +8,11 @@ import {
   sensitiveIngredients,
   type Ingredient,
 } from '../src/lib/skinIngredients.js';
+import {
+  checkProduct,
+  verdictRank,
+  type CheckProduct,
+} from '../src/lib/ingredientCheck.js';
 
 export const config = { maxDuration: 60 };
 
@@ -21,16 +27,25 @@ type ProductCategory =
   | 'Eye Care'
   | 'Other';
 
-type Product = {
-  name: string;
-  brand: string;
+type Product = CheckProduct & {
   url: string;
-  imageUrl: string | null;
   source: 'database';
   matches: string[];
   category: ProductCategory;
   score: number;
+  verdict: string;
+  label: string;
+  flags: string[];
   reason: string;
+};
+
+type RawProduct = {
+  name: string;
+  brand: string;
+  imageUrl: string | null;
+  categories: string;
+  tags: string[];
+  text: string;
 };
 
 function cleanUrl(value: unknown): string | null {
@@ -65,8 +80,6 @@ function getCategory(value: string): ProductCategory {
   return 'Other';
 }
 
-// Well-known skincare brands are listed first in results. Add or remove
-// names here (lowercase, no punctuation) to change what gets priority.
 const KNOWN_BRANDS = [
   'cerave', 'cetaphil', 'the ordinary', 'neutrogena', 'la roche posay',
   'aveeno', 'vanicream', 'eucerin', 'olay', 'paulas choice', 'paula s choice',
@@ -82,7 +95,7 @@ const KNOWN_BRANDS = [
   'fresh', 'herbivore', 'mario badescu', 'acure', 'alba botanica', 'derma e',
   'versed', 'naturium', 'good molecules', 'byoma', 'hero cosmetics',
   'topicals', 'la mer', 'olaplex', 'cantu', 'maybelline', 'revlon',
-  'neutrogena', 'coppertone', 'banana boat', 'sun bum', 'blue lizard',
+  'coppertone', 'banana boat', 'sun bum', 'blue lizard',
 ];
 
 function isKnownBrand(brand: string): boolean {
@@ -96,12 +109,6 @@ function isKnownBrand(brand: string): boolean {
   return KNOWN_BRANDS.some(
     (known) => normalized === known || normalized.startsWith(`${known} `)
   );
-}
-
-function makeReason(matches: string[]): string {
-  return matches.length === 1
-    ? 'Contains an ingredient selected for your skin profile.'
-    : `Contains ${matches.length} ingredients selected for your skin profile.`;
 }
 
 function getIngredients(
@@ -134,33 +141,32 @@ function getIngredients(
 }
 
 function shoppingUrl(brand: string, name: string): string {
-  const query = `${brand} ${name}`.trim();
-  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`;
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(
+    `${brand} ${name}`.trim()
+  )}`;
 }
 
 function dedupeKey(brand: string, name: string): string {
   return `${brand}|${name}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-type RawProduct = {
-  name: string;
-  brand: string;
-  imageUrl: string | null;
-  categories: string;
-};
-
-// Warm serverless instances reuse this, so repeat searches skip Open Beauty Facts.
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const ingredientCache = new Map<string, { at: number; products: RawProduct[] }>();
+const ingredientCache = new Map<
+  string,
+  { at: number; products: RawProduct[] }
+>();
 
 async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   const cached = ingredientCache.get(tag);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.products;
+
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.products;
+  }
 
   const params = new URLSearchParams({
     ingredients_tags: `en:${tag}`,
     fields:
-      'code,product_name,brands,image_front_small_url,categories,countries_tags',
+      'code,product_name,brands,image_front_small_url,categories,countries_tags,ingredients_tags,ingredients_text_en,ingredients_text',
     sort_by: 'unique_scans_n',
     page_size: '100',
     json: '1',
@@ -174,7 +180,9 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     }
   );
 
-  if (!response.ok) throw new Error(`Open Beauty Facts ${response.status}`);
+  if (!response.ok) {
+    throw new Error(`Open Beauty Facts ${response.status}`);
+  }
 
   const data = (await response.json()) as {
     products?: Record<string, unknown>[];
@@ -185,68 +193,86 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
   for (const product of data.products ?? []) {
     const name = cleanText(product.product_name, 150);
     const brand = cleanText(product.brands, 100).split(',')[0].trim();
+
     const countries = Array.isArray(product.countries_tags)
-      ? (product.countries_tags as unknown[])
+      ? product.countries_tags as unknown[]
       : [];
 
-    // Only real, branded products that are sold in the United States.
-    if (!name || !brand) continue;
-    if (!countries.includes('en:united-states')) continue;
+    if (!name || !brand || !countries.includes('en:united-states')) {
+      continue;
+    }
+
+    const rawTags = Array.isArray(product.ingredients_tags)
+      ? product.ingredients_tags as unknown[]
+      : [];
+
+    const tags = [
+      ...new Set(
+        rawTags
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.replace(/^[a-z]{2}:/, ''))
+      ),
+    ].slice(0, 200);
+
+    const text =
+      cleanText(product.ingredients_text_en, 1500) ||
+      cleanText(product.ingredients_text, 1500);
 
     products.push({
       name,
       brand,
       imageUrl: cleanUrl(product.image_front_small_url),
       categories: cleanText(product.categories, 300),
+      tags,
+      text,
     });
   }
 
   ingredientCache.set(tag, { at: Date.now(), products });
+
   return products;
 }
 
 async function searchOpenBeautyFacts(
   ingredients: Ingredient[]
-): Promise<Product[]> {
-  const byKey = new Map<string, Product>();
+): Promise<RawProduct[]> {
+  const byKey = new Map<string, RawProduct>();
 
   const results = await Promise.allSettled(
-    ingredients.map((ingredient) => fetchIngredientProducts(ingredient.tag))
+    ingredients.map((ingredient) =>
+      fetchIngredientProducts(ingredient.tag)
+    )
   );
 
-  // If every lookup failed, the database is down or overloaded. Say so,
-  // instead of reporting "no matching products".
   if (results.every((result) => result.status === 'rejected')) {
     throw new Error('UPSTREAM_UNAVAILABLE');
   }
 
-  results.forEach((result, index) => {
+  results.forEach((result) => {
     if (result.status !== 'fulfilled') return;
-    const ingredient = ingredients[index];
 
     for (const product of result.value) {
       const key = dedupeKey(product.brand, product.name);
       const existing = byKey.get(key);
 
       if (existing) {
-        if (!existing.matches.includes(ingredient.name)) {
-          existing.matches.push(ingredient.name);
-        }
+        existing.tags = [
+          ...new Set([...existing.tags, ...product.tags]),
+        ].slice(0, 200);
+
         if (!existing.imageUrl && product.imageUrl) {
           existing.imageUrl = product.imageUrl;
         }
+
+        if (!existing.text && product.text) {
+          existing.text = product.text;
+        }
+
+        if (!existing.categories && product.categories) {
+          existing.categories = product.categories;
+        }
       } else {
-        byKey.set(key, {
-          name: product.name,
-          brand: product.brand,
-          url: shoppingUrl(product.brand, product.name),
-          imageUrl: product.imageUrl,
-          source: 'database',
-          matches: [ingredient.name],
-          category: getCategory(`${product.name} ${product.categories}`),
-          score: 0,
-          reason: '',
-        });
+        byKey.set(key, { ...product });
       }
     }
   });
@@ -319,34 +345,58 @@ export default async function handler(
   }
 
   try {
-    const products = await searchOpenBeautyFacts(ingredients);
+    const rawProducts = await searchOpenBeautyFacts(ingredients);
 
-    
-    // A product only ever contains a handful of any profile's ingredients, so
-    // measure the match against a realistic target (6 ingredients = 100%)
-    // instead of the whole list, which made every product read as about 9%.
-    const target = Math.min(ingredients.length, 6);
-
-    const ranked = products
+    const ranked: Product[] = rawProducts
       .filter(
         (product) =>
-          requestedCategory === 'All' || product.category === requestedCategory
+          requestedCategory === 'All' ||
+          getCategory(`${product.name} ${product.categories}`) === requestedCategory
       )
-      .map((product) => ({
-        ...product,
-        score: Math.min(100, Math.round((product.matches.length / target) * 100)),
-        reason: makeReason(product.matches),
-      }))
+      .map((product) => {
+        const checkProductData: CheckProduct = {
+          name: product.name,
+          brand: product.brand,
+          imageUrl: product.imageUrl,
+          tags: product.tags,
+          text: product.text,
+        };
+
+        const result = checkProduct(
+          checkProductData,
+          skinType.value,
+          sensitive,
+          validConcerns
+        );
+
+        return {
+          ...checkProductData,
+          url: shoppingUrl(product.brand, product.name),
+          source: 'database' as const,
+          matches: result.hits.map((hit) => hit.name),
+          category: getCategory(`${product.name} ${product.categories}`),
+          score: result.score,
+          verdict: result.verdict,
+          label: result.label,
+          flags: result.flags,
+          reason: result.note,
+        };
+      })
       .sort((a, b) => {
-        // Brands you're likely to recognize come first, then best match.
+        const verdictDifference =
+          verdictRank[b.verdict as keyof typeof verdictRank] -
+          verdictRank[a.verdict as keyof typeof verdictRank];
+
+        if (verdictDifference !== 0) return verdictDifference;
+        if (b.score !== a.score) return b.score - a.score;
+
         const knownA = isKnownBrand(a.brand);
         const knownB = isKnownBrand(b.brand);
-        if (knownA !== knownB) return Number(knownB) - Number(knownA);
 
-        if (b.matches.length !== a.matches.length) {
-          return b.matches.length - a.matches.length;
+        if (knownA !== knownB) {
+          return Number(knownB) - Number(knownA);
         }
-        // Listings with a photo are usually the more complete, real ones.
+
         return Number(!!b.imageUrl) - Number(!!a.imageUrl);
       })
       .slice(0, 60);
