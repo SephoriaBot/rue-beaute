@@ -65,6 +65,39 @@ function getCategory(value: string): ProductCategory {
   return 'Other';
 }
 
+// Well-known skincare brands are listed first in results. Add or remove
+// names here (lowercase, no punctuation) to change what gets priority.
+const KNOWN_BRANDS = [
+  'cerave', 'cetaphil', 'the ordinary', 'neutrogena', 'la roche posay',
+  'aveeno', 'vanicream', 'eucerin', 'olay', 'paulas choice', 'paula s choice',
+  'cosrx', 'beauty of joseon', 'clinique', 'kiehls', 'kiehl s',
+  'drunk elephant', 'tatcha', 'glow recipe', 'first aid beauty', 'bioderma',
+  'avene', 'vichy', 'dove', 'nivea', 'garnier', 'loreal', 'l oreal',
+  'burts bees', 'burt s bees', 'cocokind', 'the inkey list', 'inkey list',
+  'supergoop', 'elf', 'e l f', 'skinfix', 'sunday riley',
+  'youth to the people', 'farmacy', 'origins', 'estee lauder', 'lancome',
+  'shiseido', 'innisfree', 'laneige', 'dr jart', 'sol de janeiro', 'murad',
+  'peter thomas roth', 'skinceuticals', 'differin', 'curel', 'jergens',
+  'st ives', 'ponds', 'pond s', 'simple', 'biossance', 'summer fridays',
+  'fresh', 'herbivore', 'mario badescu', 'acure', 'alba botanica', 'derma e',
+  'versed', 'naturium', 'good molecules', 'byoma', 'hero cosmetics',
+  'topicals', 'la mer', 'olaplex', 'cantu', 'maybelline', 'revlon',
+  'neutrogena', 'coppertone', 'banana boat', 'sun bum', 'blue lizard',
+];
+
+function isKnownBrand(brand: string): boolean {
+  const normalized = brand
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+  return KNOWN_BRANDS.some(
+    (known) => normalized === known || normalized.startsWith(`${known} `)
+  );
+}
+
 function makeReason(matches: string[]): string {
   return matches.length === 1
     ? 'Contains an ingredient selected for your skin profile.'
@@ -266,6 +299,9 @@ export default async function handler(
     });
   }
 
+  const requestedCategory =
+    typeof body.category === 'string' ? body.category : 'All';
+
   const validConcerns = skinConcerns
     .filter((concern) => requestedConcerns.includes(concern.value))
     .map((concern) => concern.value);
@@ -286,13 +322,27 @@ export default async function handler(
     const products = await searchOpenBeautyFacts(ingredients);
 
     
+    // A product only ever contains a handful of any profile's ingredients, so
+    // measure the match against a realistic target (6 ingredients = 100%)
+    // instead of the whole list, which made every product read as about 9%.
+    const target = Math.min(ingredients.length, 6);
+
     const ranked = products
+      .filter(
+        (product) =>
+          requestedCategory === 'All' || product.category === requestedCategory
+      )
       .map((product) => ({
         ...product,
-        score: Math.round((product.matches.length / ingredients.length) * 100),
+        score: Math.min(100, Math.round((product.matches.length / target) * 100)),
         reason: makeReason(product.matches),
       }))
       .sort((a, b) => {
+        // Brands you're likely to recognize come first, then best match.
+        const knownA = isKnownBrand(a.brand);
+        const knownB = isKnownBrand(b.brand);
+        if (knownA !== knownB) return Number(knownB) - Number(knownA);
+
         if (b.matches.length !== a.matches.length) {
           return b.matches.length - a.matches.length;
         }
