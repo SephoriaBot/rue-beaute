@@ -18,16 +18,16 @@ import {
 import './ingredient-finder.css';
 import './ingredient-check.css';
 
-type Product = {
-  name: string;
-  brand: string;
+type Product = CheckProduct & {
   url: string;
-  imageUrl: string | null;
   source: 'database' | 'web';
   matches: string[];
   category: string;
   score: number;
   reason: string;
+  verdict: CheckResult['verdict'];
+  label: string;
+  flags: string[];
 };
 
 type SearchState = {
@@ -94,7 +94,9 @@ function cleanShelfItem(value: unknown): CheckProduct | null {
     brand: v.brand.slice(0, 100),
     imageUrl: typeof v.imageUrl === 'string' ? v.imageUrl : null,
     tags: Array.isArray(v.tags)
-      ? v.tags.filter((t): t is string => typeof t === 'string').slice(0, 200)
+      ? v.tags
+          .filter((t): t is string => typeof t === 'string')
+          .slice(0, 200)
       : [],
     text: typeof v.text === 'string' ? v.text.slice(0, 1500) : '',
   };
@@ -388,9 +390,9 @@ export default function IngredientFinder() {
 
       if (!response.ok) {
         throw new Error(
-  data.error ||
-  `Search failed (HTTP ${response.status}). Please try again.`
-);
+          data.error ||
+            `Search failed (HTTP ${response.status}). Please try again.`
+        );
       }
 
       setSearch({
@@ -667,8 +669,9 @@ export default function IngredientFinder() {
                       {category === 'All' ? 'Product matches' : category}
                     </h2>
                     <p>
-                      US-available products, ranked by how many of your
-                      ingredients they contain. Links open a shopping search.
+                      Products are scored with the same personalized ingredient
+                      checker used in Brand Search and My Products. Links open
+                      a shopping search.
                     </p>
                   </div>
 
@@ -699,47 +702,61 @@ export default function IngredientFinder() {
                           </div>
 
                           <ul className="product-results">
-                            {shown.map((product, index) => (
-                              <li
-                                key={`${product.brand}|${product.name}|${product.url}|${index}`}
-                                className="product-result"
-                              >
-                                {product.imageUrl ? (
-                                  <img
-                                    src={product.imageUrl}
-                                    alt=""
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <div className="product-placeholder">
-                                    <span>RB</span>
+                            {shown.map((product, index) => {
+                              const alreadySaved = shelf.some(
+                                (item) => itemKey(item) === itemKey(product)
+                              );
+
+                              return (
+                                <li
+                                  key={`${product.brand}|${product.name}|${product.url}|${index}`}
+                                  className="product-result"
+                                >
+                                  {product.imageUrl ? (
+                                    <img
+                                      src={product.imageUrl}
+                                      alt=""
+                                      loading="lazy"
+                                    />
+                                  ) : (
+                                    <div className="product-placeholder">
+                                      <span>RB</span>
+                                    </div>
+                                  )}
+
+                                  <div className="product-result-info">
+                                    <a
+                                      href={product.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    >
+                                      {product.brand ? `${product.brand} — ` : ''}
+                                      {product.name} ↗
+                                    </a>
+
+                                    <span className="product-match">
+                                      {product.matches.slice(0, 4).join(', ')}
+                                      {product.matches.length > 4
+                                        ? ` +${product.matches.length - 4} more`
+                                        : ''}
+                                    </span>
                                   </div>
-                                )}
 
-                                <div className="product-result-info">
-                                  <a
-                                    href={product.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {product.brand ? `${product.brand} — ` : ''}
-                                    {product.name} ↗
-                                  </a>
-
-                                  <span className="product-match">
-                                    {product.matches.slice(0, 4).join(', ')}
-                                    {product.matches.length > 4
-                                      ? ` +${product.matches.length - 4} more`
-                                      : ''}
-                                  </span>
-                                </div>
-
-                                <div className="product-score">
-                                  <strong>{product.score}%</strong>
-                                  <small>ingredient match</small>
-                                </div>
-                              </li>
-                            ))}
+                                  <div className="product-score">
+                                    <strong>{product.label}</strong>
+                                    <small>{product.score}% ingredient match</small>
+                                    <button
+                                      type="button"
+                                      className="check-action"
+                                      disabled={alreadySaved}
+                                      onClick={() => addToShelf(product)}
+                                    >
+                                      {alreadySaved ? 'On my shelf' : '+ My shelf'}
+                                    </button>
+                                  </div>
+                                </li>
+                              );
+                            })}
                           </ul>
 
                           {products.length > 5 && (
