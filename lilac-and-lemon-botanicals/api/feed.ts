@@ -13,7 +13,9 @@ type Feed = {
 // websites and add a line in the same format.
 const FEEDS: Feed[] = [
   { source: 'Lab Muffin Beauty Science', url: 'https://labmuffin.com/feed/' },
-  { source: 'The Beauty Brains', url: 'https://thebeautybrains.com/feed/' },
+  { source: 'Colin’s Beauty Pages', url: 'https://colinsbeautypages.co.uk/feed/' },
+  { source: 'Beautiful With Brains', url: 'https://beautifulwithbrains.com/feed/' },
+  { source: 'Formula Botanica', url: 'https://formulabotanica.com/feed/' },
   {
     source: 'FDA',
     url: 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/consumers/rss.xml',
