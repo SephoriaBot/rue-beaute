@@ -13,6 +13,12 @@ import {
   verdictRank,
   type CheckProduct,
 } from '../src/lib/ingredientCheck.js';
+import {
+  hairTypes,
+  hairConcerns,
+  getHairProfileIngredients,
+} from '../src/lib/hairIngredients.js';
+import { checkHairProduct } from '../src/lib/hairCheck.js';
 
 export const config = { maxDuration: 60 };
 
@@ -31,7 +37,7 @@ type Product = CheckProduct & {
   url: string;
   source: 'database';
   matches: string[];
-  category: ProductCategory;
+  category: string;
   score: number;
   verdict: string;
   label: string;
@@ -80,7 +86,35 @@ function getCategory(value: string): ProductCategory {
   return 'Other';
 }
 
+const HAIR_WORDS =
+  /shampoo|conditioner|\bhair\b|scalp|curl|co-wash|cowash|leave-in|leave in|detangl|pomade|hair ?spray|hair ?gel|hair ?oil|hair ?mask|styling|mousse|dry shampoo/;
+
+function isHairProduct(value: string): boolean {
+  return HAIR_WORDS.test(value.toLowerCase());
+}
+
+function getHairCategory(value: string): string {
+  const name = value.toLowerCase();
+
+  if (/scalp (treatment|serum|scrub|care|oil)|dandruff|hair growth|hair loss|thinning/.test(name)) return 'Scalp Care';
+  if (/shampoo|co-wash|cowash|cleansing conditioner/.test(name)) return 'Shampoos';
+  if (/leave-in|leave in|detangl/.test(name)) return 'Leave-ins';
+  if (/mask|masque|deep condition|treatment|bond|repair|protein/.test(name)) return 'Masks & Treatments';
+  if (/conditioner/.test(name)) return 'Conditioners';
+  if (/hair oil|serum|elixir/.test(name)) return 'Hair Oils';
+  if (/gel|mousse|pomade|spray|cream|custard|wax|paste|styl/.test(name)) return 'Styling';
+
+  return 'Other';
+}
+
 const KNOWN_BRANDS = [
+  'sheamoisture', 'shea moisture', 'pantene', 'head and shoulders',
+  'tresemme', 'aussie', 'herbal essences', 'redken', 'paul mitchell',
+  'kerastase', 'briogeo', 'ouidad', 'devacurl', 'mielle', 'as i am',
+  'carols daughter', 'not your mothers', 'living proof', 'aveda',
+  'bumble and bumble', 'moroccanoil', 'k18', 'pureology', 'matrix',
+  'kristin ess', 'amika', 'maui moisture', 'garnier fructis', 'curlsmith',
+  'camille rose', 'eden bodyworks', 'verb', 'ouai', 'joico', 'biolage',
   'cerave', 'cetaphil', 'the ordinary', 'neutrogena', 'la roche posay',
   'aveeno', 'vanicream', 'eucerin', 'olay', 'paulas choice', 'paula s choice',
   'cosrx', 'beauty of joseon', 'clinique', 'kiehls', 'kiehl s',
@@ -140,6 +174,14 @@ function getIngredients(
   return [...unique.values()];
 }
 
+function getHairIngredients(
+  hairTypeValue: string,
+  sensitiveScalp: boolean,
+  concernValues: string[]
+): Ingredient[] {
+  return getHairProfileIngredients(hairTypeValue, sensitiveScalp, concernValues);
+}
+
 function shoppingUrl(brand: string, name: string): string {
   return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(
     `${brand} ${name}`.trim()
@@ -156,13 +198,10 @@ const ingredientCache = new Map<
   { at: number; products: RawProduct[] }
 >();
 
-async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
-  const cached = ingredientCache.get(tag);
-
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    return cached.products;
-  }
-
+async function fetchPage(
+  tag: string,
+  hairOnly: boolean
+): Promise<Record<string, unknown>[]> {
   const params = new URLSearchParams({
     ingredients_tags: `en:${tag}`,
     fields:
@@ -171,6 +210,8 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     page_size: '100',
     json: '1',
   });
+
+  if (hairOnly) params.set('categories_tags', 'en:hair-care');
 
   const response = await fetch(
     `https://world.openbeautyfacts.org/api/v2/search?${params}`,
@@ -188,9 +229,31 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     products?: Record<string, unknown>[];
   };
 
+  return data.products ?? [];
+}
+
+async function fetchIngredientProducts(
+  tag: string,
+  hair = false
+): Promise<RawProduct[]> {
+  const cacheKey = hair ? `hair:${tag}` : tag;
+  const cached = ingredientCache.get(cacheKey);
+
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return cached.products;
+  }
+
+  let page = await fetchPage(tag, hair);
+
+  // If the hair-care category filter finds nothing, try again without it and
+  // let the hair keyword check below do the filtering.
+  if (hair && page.length === 0) {
+    page = await fetchPage(tag, false);
+  }
+
   const products: RawProduct[] = [];
 
-  for (const product of data.products ?? []) {
+  for (const product of page) {
     const name = cleanText(product.product_name, 150);
     const brand = cleanText(product.brands, 100).split(',')[0].trim();
 
@@ -228,19 +291,20 @@ async function fetchIngredientProducts(tag: string): Promise<RawProduct[]> {
     });
   }
 
-  ingredientCache.set(tag, { at: Date.now(), products });
+  ingredientCache.set(cacheKey, { at: Date.now(), products });
 
   return products;
 }
 
 async function searchOpenBeautyFacts(
-  ingredients: Ingredient[]
+  ingredients: Ingredient[],
+  hair = false
 ): Promise<RawProduct[]> {
   const byKey = new Map<string, RawProduct>();
 
   const results = await Promise.allSettled(
     ingredients.map((ingredient) =>
-      fetchIngredientProducts(ingredient.tag)
+      fetchIngredientProducts(ingredient.tag, hair)
     )
   );
 
@@ -310,7 +374,7 @@ export default async function handler(
   }
 
   const body = req.body ?? {};
-  const skinType = skinTypes.find((s) => s.value === body.skinType);
+  const hairMode = body.mode === 'hair';
   const sensitive = body.sensitive === true;
 
   const requestedConcerns: string[] = Array.isArray(body.concerns)
@@ -319,39 +383,57 @@ export default async function handler(
       )
     : [];
 
-  if (!skinType) {
-    return res.status(400).json({
-      error: 'Please select a valid skin type.',
-    });
-  }
-
   const requestedCategory =
     typeof body.category === 'string' ? body.category : 'All';
 
-  const validConcerns = skinConcerns
+  const hairType = hairMode
+    ? hairTypes.find((h) => h.value === body.hairType)
+    : undefined;
+  const skinType = hairMode
+    ? undefined
+    : skinTypes.find((s) => s.value === body.skinType);
+  const profileType = hairMode ? hairType : skinType;
+
+  if (!profileType) {
+    return res.status(400).json({
+      error: hairMode
+        ? 'Please select a valid hair type.'
+        : 'Please select a valid skin type.',
+    });
+  }
+
+  const validConcerns = (hairMode ? hairConcerns : skinConcerns)
     .filter((concern) => requestedConcerns.includes(concern.value))
     .map((concern) => concern.value);
 
-  const ingredients = getIngredients(
-    skinType.value,
-    sensitive,
-    validConcerns
-  );
+  const ingredients = hairMode
+    ? getHairIngredients(profileType.value, sensitive, validConcerns)
+    : getIngredients(profileType.value, sensitive, validConcerns);
 
   if (ingredients.length === 0) {
     return res.status(400).json({
-      error: 'No ingredients were found for this skin profile.',
+      error: 'No ingredients were found for this profile.',
     });
   }
 
   try {
-    const rawProducts = await searchOpenBeautyFacts(ingredients);
+    const rawProducts = (await searchOpenBeautyFacts(ingredients, hairMode)).filter(
+      (product) =>
+        hairMode
+          ? isHairProduct(`${product.name} ${product.categories}`)
+          : true
+    );
+
+    const categoryOf = (product: RawProduct): string =>
+      hairMode
+        ? getHairCategory(`${product.name} ${product.categories}`)
+        : getCategory(`${product.name} ${product.categories}`);
 
     const ranked: Product[] = rawProducts
       .filter(
         (product) =>
           requestedCategory === 'All' ||
-          getCategory(`${product.name} ${product.categories}`) === requestedCategory
+          categoryOf(product) === requestedCategory
       )
       .map((product) => {
         const checkProductData: CheckProduct = {
@@ -362,19 +444,26 @@ export default async function handler(
           text: product.text,
         };
 
-        const result = checkProduct(
-          checkProductData,
-          skinType.value,
-          sensitive,
-          validConcerns
-        );
+        const result = hairMode
+          ? checkHairProduct(
+              checkProductData,
+              profileType.value,
+              sensitive,
+              validConcerns
+            )
+          : checkProduct(
+              checkProductData,
+              profileType.value,
+              sensitive,
+              validConcerns
+            );
 
         return {
           ...checkProductData,
           url: shoppingUrl(product.brand, product.name),
           source: 'database' as const,
           matches: result.hits.map((hit) => hit.name),
-          category: getCategory(`${product.name} ${product.categories}`),
+          category: categoryOf(product),
           score: result.score,
           verdict: result.verdict,
           label: result.label,
@@ -405,7 +494,8 @@ export default async function handler(
       products: ranked,
       total: ingredients.length,
       profile: {
-        skinType: skinType.value,
+        mode: hairMode ? 'hair' : 'skin',
+        skinType: profileType.value,
         sensitive,
         concerns: validConcerns,
       },
