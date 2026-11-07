@@ -22,6 +22,7 @@ function cleanProduct(v: unknown) {
       ? p.tags.filter((t): t is string => typeof t === 'string').slice(0, 200)
       : [],
     text: typeof p.text === 'string' ? p.text.slice(0, 1500) : '',
+    kind: p.kind === 'hair' ? 'hair' : 'skin',
   };
 }
 
