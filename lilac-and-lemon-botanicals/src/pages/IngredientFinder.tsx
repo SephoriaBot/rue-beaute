@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/react-router';
 import { Link } from 'react-router-dom';
 import { useApi } from '../lib/api';
@@ -257,6 +257,9 @@ export default function IngredientFinder() {
     loadList(SHELF_KEY, cleanShelfItem)
   );
 
+  const [shelfError, setShelfError] = useState<string | null>(null);
+  const loadedFor = useRef(false);
+
   const [manualName, setManualName] = useState('');
   const [manualBrand, setManualBrand] = useState('');
   const [manualText, setManualText] = useState('');
@@ -264,8 +267,110 @@ export default function IngredientFinder() {
   const brandLookup = useLookup('brand');
   const productLookup = useLookup('product');
 
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
   const { apiFetch } = useApi();
+
+  // Signed in: the shelf and brands live on the account (Turso).
+  // Anything already saved on this device is merged in once, then cleared.
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      return;
+    }
+    if (loadedFor.current) return;
+    loadedFor.current = true;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await apiFetch('/api/shelf');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || 'Could not load');
+        if (cancelled) return;
+
+        const serverBrands: string[] = Array.isArray(data.brands)
+          ? data.brands
+          : [];
+        const serverShelf: CheckProduct[] = Array.isArray(data.products)
+          ? data.products
+          : [];
+
+        const localBrands = loadList(BRANDS_KEY, cleanBrand);
+        const localShelf = loadList(SHELF_KEY, cleanShelfItem);
+
+        const mergedBrands = [...serverBrands];
+        for (const b of [...localBrands, ...favBrands]) {
+          if (!mergedBrands.some((x) => x.toLowerCase() === b.toLowerCase())) {
+            mergedBrands.push(b);
+          }
+        }
+
+        const mergedShelf = [...serverShelf];
+        for (const p of [...localShelf, ...shelf]) {
+          if (!mergedShelf.some((x) => itemKey(x) === itemKey(p))) {
+            mergedShelf.push(p);
+          }
+        }
+
+        const brands = mergedBrands.slice(0, 30);
+        const products = mergedShelf.slice(0, 50);
+
+        setFavBrands(brands);
+        setShelf(products);
+
+        const changed =
+          brands.length !== serverBrands.length ||
+          products.length !== serverShelf.length;
+
+        if (changed) {
+          const save = await apiFetch('/api/shelf', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ brands, products }),
+          });
+          if (!save.ok) throw new Error('Could not save');
+        }
+
+        try {
+          localStorage.removeItem(BRANDS_KEY);
+          localStorage.removeItem(SHELF_KEY);
+        } catch {
+          // ignore
+        }
+      } catch {
+        if (!cancelled) {
+          loadedFor.current = false;
+          setShelfError('Could not load your saved products. Please refresh.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn]);
+
+  async function persist(brands: string[], products: CheckProduct[]) {
+    if (!isSignedIn) {
+      saveList(BRANDS_KEY, brands);
+      saveList(SHELF_KEY, products);
+      return;
+    }
+
+    try {
+      const response = await apiFetch('/api/shelf', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brands, products }),
+      });
+      if (!response.ok) throw new Error('save failed');
+      setShelfError(null);
+    } catch {
+      setShelfError('Could not save to your account. Please try again.');
+    }
+  }
 
   const current = skinTypes.find((type) => type.value === selected) ?? null;
 
@@ -315,13 +420,13 @@ export default function IngredientFinder() {
 
     const next = [...favBrands, clean].slice(0, 30);
     setFavBrands(next);
-    saveList(BRANDS_KEY, next);
+    void persist(next, shelf);
   }
 
   function removeBrand(name: string) {
     const next = favBrands.filter((b) => b !== name);
     setFavBrands(next);
-    saveList(BRANDS_KEY, next);
+    void persist(next, shelf);
   }
 
   function addToShelf(product: CheckProduct) {
@@ -329,13 +434,13 @@ export default function IngredientFinder() {
 
     const next = [...shelf, product].slice(0, 50);
     setShelf(next);
-    saveList(SHELF_KEY, next);
+    void persist(favBrands, next);
   }
 
   function removeFromShelf(product: CheckProduct) {
     const next = shelf.filter((item) => itemKey(item) !== itemKey(product));
     setShelf(next);
-    saveList(SHELF_KEY, next);
+    void persist(favBrands, next);
   }
 
   function addManual() {
@@ -944,8 +1049,12 @@ export default function IngredientFinder() {
               <h2>My products</h2>
               <p>
                 Add what you already use to see how each one fits your current
-                profile. Your shelf is saved on this device.
+                profile.{' '}
+                {isSignedIn
+                  ? 'Your shelf is saved to your account.'
+                  : 'Sign in to save your shelf to your account.'}
               </p>
+              {shelfError && <p role="alert">{shelfError}</p>}
             </div>
 
             {shelf.length === 0 ? (
