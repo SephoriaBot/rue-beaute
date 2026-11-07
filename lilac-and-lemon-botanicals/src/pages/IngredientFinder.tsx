@@ -10,6 +10,13 @@ import {
   getProfileIngredients,
 } from '../lib/skinIngredients';
 import {
+  hairTypes,
+  hairConcerns,
+  hairCategories,
+  getHairProfileIngredients,
+} from '../lib/hairIngredients';
+import { checkHairProduct } from '../lib/hairCheck';
+import {
   checkProduct,
   verdictRank,
   type CheckProduct,
@@ -39,6 +46,8 @@ type SearchState = {
 };
 
 type Tab = 'matches' | 'brands' | 'mine';
+type Mode = 'skin' | 'hair';
+type ShelfItem = CheckProduct & { kind?: Mode };
 
 type Lookup = {
   loading: boolean;
@@ -80,7 +89,7 @@ function cleanBrand(value: unknown): string | null {
     : null;
 }
 
-function cleanShelfItem(value: unknown): CheckProduct | null {
+function cleanShelfItem(value: unknown): ShelfItem | null {
   if (!value || typeof value !== 'object') return null;
 
   const v = value as Record<string, unknown>;
@@ -99,6 +108,7 @@ function cleanShelfItem(value: unknown): CheckProduct | null {
           .slice(0, 200)
       : [],
     text: typeof v.text === 'string' ? v.text.slice(0, 1500) : '',
+    kind: v.kind === 'hair' ? 'hair' : 'skin',
   };
 }
 
@@ -156,7 +166,7 @@ function useLookup(mode: 'brand' | 'product') {
     }
   }
 
-  return { state, run };
+  return { state, run, reset: () => setState(null) };
 }
 
 function CheckCard({
@@ -237,6 +247,7 @@ function CheckCard({
 }
 
 export default function IngredientFinder() {
+  const [mode, setMode] = useState<Mode>('skin');
   const [selected, setSelected] = useState<string | null>(null);
   const [sensitive, setSensitive] = useState(false);
   const [concerns, setConcerns] = useState<string[]>([]);
@@ -253,7 +264,7 @@ export default function IngredientFinder() {
     loadList(BRANDS_KEY, cleanBrand)
   );
 
-  const [shelf, setShelf] = useState<CheckProduct[]>(() =>
+  const [shelf, setShelf] = useState<ShelfItem[]>(() =>
     loadList(SHELF_KEY, cleanShelfItem)
   );
 
@@ -292,7 +303,7 @@ export default function IngredientFinder() {
         const serverBrands: string[] = Array.isArray(data.brands)
           ? data.brands
           : [];
-        const serverShelf: CheckProduct[] = Array.isArray(data.products)
+        const serverShelf: ShelfItem[] = Array.isArray(data.products)
           ? data.products
           : [];
 
@@ -352,7 +363,7 @@ export default function IngredientFinder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn]);
 
-  async function persist(brands: string[], products: CheckProduct[]) {
+  async function persist(brands: string[], products: ShelfItem[]) {
     if (!isSignedIn) {
       saveList(BRANDS_KEY, brands);
       saveList(SHELF_KEY, products);
@@ -372,9 +383,32 @@ export default function IngredientFinder() {
     }
   }
 
-  const current = skinTypes.find((type) => type.value === selected) ?? null;
+  const hair = mode === 'hair';
+  const types = hair ? hairTypes : skinTypes;
+  const concernList = hair ? hairConcerns : skinConcerns;
+  const categoryList = hair ? hairCategories : productCategories;
+  const noun = hair ? 'hair' : 'skin';
+
+  const current = types.find((type) => type.value === selected) ?? null;
+
+  const modeShelf = shelf.filter((item) => (item.kind ?? 'skin') === mode);
+
+  function switchMode(next: Mode) {
+    if (next === mode) return;
+    setMode(next);
+    setSelected(null);
+    setSensitive(false);
+    setConcerns([]);
+    setCategory('All');
+    setSearch(null);
+    setOpenTag(null);
+    setExpanded([]);
+    brandLookup.reset();
+    productLookup.reset();
+  }
 
   const profileKey = JSON.stringify({
+    mode,
     skinType: selected,
     sensitive,
     concerns: [...concerns].sort(),
@@ -384,14 +418,18 @@ export default function IngredientFinder() {
   const visibleSearch = search?.profileKey === profileKey ? search : null;
 
   const ingredients = current
-    ? getProfileIngredients(selected!, sensitive, concerns)
+    ? hair
+      ? getHairProfileIngredients(selected!, sensitive, concerns)
+      : getProfileIngredients(selected!, sensitive, concerns)
     : [];
 
   const openIngredient =
     ingredients.find((ingredient) => ingredient.tag === openTag) ?? null;
 
   function score(product: CheckProduct): CheckResult {
-    return checkProduct(product, selected ?? '', sensitive, concerns);
+    return hair
+      ? checkHairProduct(product, selected ?? '', sensitive, concerns)
+      : checkProduct(product, selected ?? '', sensitive, concerns);
   }
 
   function toggleExpanded(categoryName: string) {
@@ -432,7 +470,7 @@ export default function IngredientFinder() {
   function addToShelf(product: CheckProduct) {
     if (shelf.some((item) => itemKey(item) === itemKey(product))) return;
 
-    const next = [...shelf, product].slice(0, 50);
+    const next = [...shelf, { ...product, kind: mode }].slice(0, 50);
     setShelf(next);
     void persist(favBrands, next);
   }
@@ -483,12 +521,11 @@ export default function IngredientFinder() {
       const response = await apiFetch('/api/product-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          skinType: selected,
-          sensitive,
-          concerns,
-          category,
-        }),
+        body: JSON.stringify(
+          hair
+            ? { mode: 'hair', hairType: selected, sensitive, concerns, category }
+            : { skinType: selected, sensitive, concerns, category }
+        ),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -547,25 +584,48 @@ export default function IngredientFinder() {
     <main className="ingredient-page">
       <div className="wrap ingredient-wrap">
         <header className="ingredient-intro">
-          <p className="ingredient-eyebrow">PERSONALIZED SKINCARE RESEARCH</p>
+          <p className="ingredient-eyebrow">
+            {hair ? 'PERSONALIZED HAIRCARE RESEARCH' : 'PERSONALIZED SKINCARE RESEARCH'}
+          </p>
           <h1>Ingredient Finder</h1>
           <p>
-            Build your skin profile, then find products, browse brands you
+            Build your {noun} profile, then find products, browse brands you
             like, or check what you already own.
           </p>
         </header>
 
         <section className="ingredient-section">
+          <div className="ingredient-types" role="group" aria-label="Skin or hair">
+            <button
+              type="button"
+              className={`ingredient-chip${!hair ? ' active' : ''}`}
+              aria-pressed={!hair}
+              onClick={() => switchMode('skin')}
+            >
+              Skin
+            </button>
+            <button
+              type="button"
+              className={`ingredient-chip${hair ? ' active' : ''}`}
+              aria-pressed={hair}
+              onClick={() => switchMode('hair')}
+            >
+              Hair
+            </button>
+          </div>
+        </section>
+
+        <section className="ingredient-section">
           <div className="ingredient-section-heading">
             <span className="ingredient-step">01</span>
             <div>
-              <h2>Choose your skin type</h2>
-              <p>Select the skin type that best describes your skin.</p>
+              <h2>{hair ? 'Choose your hair type' : 'Choose your skin type'}</h2>
+              <p>{hair ? 'Select the hair type that best describes your natural texture.' : 'Select the skin type that best describes your skin.'}</p>
             </div>
           </div>
 
-          <div className="ingredient-types" role="group" aria-label="Skin type">
-            {skinTypes.map((type) => (
+          <div className="ingredient-types" role="group" aria-label={hair ? 'Hair type' : 'Skin type'}>
+            {types.map((type) => (
               <button
                 key={type.value}
                 type="button"
@@ -583,8 +643,8 @@ export default function IngredientFinder() {
           <div className="ingredient-section-heading">
             <span className="ingredient-step">02</span>
             <div>
-              <h2>Skin sensitivity</h2>
-              <p>Sensitivity can be present with any skin type.</p>
+              <h2>{hair ? 'Scalp sensitivity' : 'Skin sensitivity'}</h2>
+              <p>{hair ? 'Sensitivity can be present with any hair type.' : 'Sensitivity can be present with any skin type.'}</p>
             </div>
           </div>
 
@@ -595,10 +655,11 @@ export default function IngredientFinder() {
               onChange={(event) => setSensitive(event.target.checked)}
             />
             <span>
-              <strong>My skin is sensitive</strong>
+              <strong>{hair ? 'My scalp is sensitive' : 'My skin is sensitive'}</strong>
               <small>
-                Include ingredients commonly used to support a sensitive skin
-                barrier.
+                {hair
+                  ? 'Include ingredients commonly used to soothe a sensitive scalp, and watch for fragrance and essential oils.'
+                  : 'Include ingredients commonly used to support a sensitive skin barrier.'}
               </small>
             </span>
           </label>
@@ -608,13 +669,13 @@ export default function IngredientFinder() {
           <div className="ingredient-section-heading">
             <span className="ingredient-step">03</span>
             <div>
-              <h2>Skin concerns</h2>
+              <h2>{hair ? 'Hair and scalp concerns' : 'Skin concerns'}</h2>
               <p>Choose any concerns you'd like your routine to address.</p>
             </div>
           </div>
 
           <div className="ingredient-concerns">
-            {skinConcerns.map((concern) => {
+            {concernList.map((concern) => {
               const active = concerns.includes(concern.value);
 
               return (
@@ -668,7 +729,7 @@ export default function IngredientFinder() {
               className={`check-tab${tab === 'mine' ? ' active' : ''}`}
               onClick={() => setTab('mine')}
             >
-              My products{shelf.length > 0 ? ` (${shelf.length})` : ''}
+              My products{modeShelf.length > 0 ? ` (${modeShelf.length})` : ''}
             </button>
           </div>
         )}
@@ -727,7 +788,7 @@ export default function IngredientFinder() {
                   All
                 </button>
 
-                {productCategories.map((item) => (
+                {categoryList.map((item) => (
                   <button
                     key={item}
                     type="button"
@@ -786,7 +847,7 @@ export default function IngredientFinder() {
                       another category or remove a concern.
                     </p>
                   ) : (
-                    productCategories.map((categoryName) => {
+                    categoryList.map((categoryName) => {
                       const products = visibleSearch.products!.filter(
                         (product) => product.category === categoryName
                       );
@@ -898,7 +959,7 @@ export default function IngredientFinder() {
               <h2>Browse a brand</h2>
               <p>
                 Pick a brand you like and see which of its products fit your
-                skin profile.
+                {noun} profile.
               </p>
             </div>
 
@@ -1057,14 +1118,14 @@ export default function IngredientFinder() {
               {shelfError && <p role="alert">{shelfError}</p>}
             </div>
 
-            {shelf.length === 0 ? (
+            {modeShelf.length === 0 ? (
               <p className="ingredient-note check-center">
                 Nothing on your shelf yet. Search below or paste an ingredient
                 list.
               </p>
             ) : (
               <ul className="check-list">
-                {shelf.map((product) => (
+                {modeShelf.map((product) => (
                   <CheckCard
                     key={itemKey(product)}
                     product={product}
@@ -1200,7 +1261,7 @@ export default function IngredientFinder() {
 
         {!current && (
           <p className="ingredient-empty">
-            Select a skin type above to start building your ingredient profile.
+            {hair ? 'Select a hair type above to start building your ingredient profile.' : 'Select a skin type above to start building your ingredient profile.'}
           </p>
         )}
       </div>
