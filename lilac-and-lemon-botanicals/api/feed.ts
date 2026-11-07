@@ -32,23 +32,30 @@ const MAX_ITEMS = 60;
 
 let cache: { at: number; items: FeedItem[] } | null = null;
 
-async function loadFeed(feed: Feed): Promise<FeedItem[]> {
+type Loaded = { items: FeedItem[]; raw: number };
+
+async function loadFeed(feed: Feed): Promise<Loaded> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const r = await fetch(feed.url, {
       signal: controller.signal,
+      redirect: 'follow',
       headers: {
-        'User-Agent': 'RueBeauteFeed/1.0 (+headline reader)',
-        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml',
+        // Some sites turn away requests that don't look like a browser.
+        'User-Agent':
+          'Mozilla/5.0 (compatible; RueBeauteFeed/1.0; +https://rue-botanicals.vercel.app)',
+        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
       },
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const xml = (await r.text()).slice(0, MAX_FEED_CHARS);
-    return parseFeed(xml, feed.source).filter(
+    const all = parseFeed(xml, feed.source);
+    const items = all.filter(
       (item) =>
         !CELEB_RE.test(item.title) && (!feed.onlyTagged || item.topics.length > 0)
     );
+    return { items, raw: all.length };
   } finally {
     clearTimeout(timer);
   }
@@ -60,13 +67,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  res.setHeader('Cache-Control', 'public, s-maxage=1800, stale-while-revalidate=3600');
+  const debug = req.query.debug === '1';
 
-  if (cache && Date.now() - cache.at < CACHE_MS) {
-    return res.status(200).json({ items: cache.items });
+  if (debug) {
+    res.setHeader('Cache-Control', 'no-store');
+  } else {
+    res.setHeader('Cache-Control', 'public, s-maxage=1800, stale-while-revalidate=3600');
+    if (cache && Date.now() - cache.at < CACHE_MS) {
+      return res.status(200).json({ items: cache.items });
+    }
   }
 
   const results = await Promise.allSettled(FEEDS.map(loadFeed));
+
+  if (debug) {
+    // Visit /api/feed?debug=1 to see what each source did.
+    return res.status(200).json({
+      sources: results.map((result, i) =>
+        result.status === 'fulfilled'
+          ? {
+              source: FEEDS[i].source,
+              ok: true,
+              found: result.value.raw,
+              kept: result.value.items.length,
+            }
+          : {
+              source: FEEDS[i].source,
+              ok: false,
+              error: String(result.reason?.message ?? result.reason),
+            }
+      ),
+    });
+  }
 
   const seen = new Set<string>();
   const items: FeedItem[] = [];
@@ -75,7 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error(`Feed failed (${FEEDS[i].source}):`, result.reason);
       return;
     }
-    for (const item of result.value) {
+    for (const item of result.value.items) {
       if (seen.has(item.link)) continue;
       seen.add(item.link);
       items.push(item);
