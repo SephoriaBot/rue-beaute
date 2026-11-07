@@ -1,14 +1,29 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { parseFeed, type FeedItem } from './_lib/rss.js';
 
+type Feed = {
+  source: string;
+  url: string;
+  // For broad feeds (like all FDA consumer news): keep only beauty-related items.
+  onlyTagged?: boolean;
+};
+
 // Add, remove, or swap feeds here. Any standard RSS/Atom URL works.
-const FEEDS: { source: string; url: string }[] = [
-  { source: 'Allure', url: 'https://www.allure.com/feed/rss' },
+// To add Cosmetics Design or the AAD, copy the "RSS Feed" link from their
+// websites and add a line in the same format.
+const FEEDS: Feed[] = [
+  { source: 'Lab Muffin Beauty Science', url: 'https://labmuffin.com/feed/' },
   { source: 'Into The Gloss', url: 'https://intothegloss.com/feed/' },
-  { source: 'Harper’s Bazaar', url: 'https://www.harpersbazaar.com/rss/beauty.xml/' },
-  { source: 'Elle', url: 'https://www.elle.com/rss/beauty.xml/' },
-  { source: 'Glamour', url: 'https://www.glamour.com/feed/beauty/rss' },
+  {
+    source: 'FDA',
+    url: 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/consumer-updates/rss.xml',
+    onlyTagged: true,
+  },
 ];
+
+// Backup filter: skip celebrity-driven headlines.
+const CELEB_RE =
+  /\b(?:celebs?|celebrit(?:y|ies)|red carpet|met gala|kardashian|jenner|oscars|royal family)\b/i;
 
 const CACHE_MS = 30 * 60_000;
 const FETCH_TIMEOUT_MS = 6000;
@@ -17,7 +32,7 @@ const MAX_ITEMS = 60;
 
 let cache: { at: number; items: FeedItem[] } | null = null;
 
-async function loadFeed(feed: { source: string; url: string }): Promise<FeedItem[]> {
+async function loadFeed(feed: Feed): Promise<FeedItem[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -30,7 +45,10 @@ async function loadFeed(feed: { source: string; url: string }): Promise<FeedItem
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const xml = (await r.text()).slice(0, MAX_FEED_CHARS);
-    return parseFeed(xml, feed.source);
+    return parseFeed(xml, feed.source).filter(
+      (item) =>
+        !CELEB_RE.test(item.title) && (!feed.onlyTagged || item.topics.length > 0)
+    );
   } finally {
     clearTimeout(timer);
   }
