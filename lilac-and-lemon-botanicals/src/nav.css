@@ -130,6 +130,26 @@ nav.site-nav {
   color: var(--brown);
 }
 
+/* "More" button + sheet only exist on mobile */
+.site-nav-item.site-nav-more {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: none;
+}
+
+.site-nav-more svg {
+  display: block;
+  fill: currentColor;
+  height: 28px;
+  width: 32px;
+}
+
+.site-nav-sheet,
+.site-nav-sheet-backdrop {
+  display: none;
+}
+
 /* Tighter desktop for mid-size screens */
 @media (max-width: 1100px) {
   .site-nav-bar {
@@ -142,7 +162,7 @@ nav.site-nav {
   }
 }
 
-/* Mobile: links become a fixed bottom tab bar */
+/* Mobile: links become a fixed bottom tab bar (4 tabs + More) */
 @media (max-width: 900px) {
   /* A blur on the bar would trap the fixed tab bar inside it, so drop it here */
   .site-nav-bar {
@@ -160,10 +180,10 @@ nav.site-nav {
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--line-soft);
     bottom: 0;
-    gap: 0;
+    gap: 4px;
     justify-content: space-around;
     left: 0;
-    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     position: fixed;
     right: 0;
     z-index: 50;
@@ -171,15 +191,52 @@ nav.site-nav {
 
   .site-nav-links .site-nav-item {
     flex: 1 1 0;
-    font-size: 0.54rem;
-    letter-spacing: 0.04em;
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
     min-width: 0;
-    padding: 5px 2px 4px;
+    padding: 6px 2px 5px;
   }
 
   .site-nav-links .site-nav-item img {
-    height: 28px;
-    width: 32px;
+    height: 30px;
+    width: 34px;
+  }
+
+  /* Secondary pages move into the More sheet */
+  .site-nav-links .site-nav-item.site-nav-secondary {
+    display: none;
+  }
+
+  .site-nav-links .site-nav-item.site-nav-more {
+    display: flex;
+  }
+
+  .site-nav-sheet-backdrop {
+    background: rgba(60, 40, 50, 0.18);
+    border: 0;
+    display: block;
+    inset: 0;
+    padding: 0;
+    position: fixed;
+    z-index: 48;
+  }
+
+  .site-nav-sheet {
+    background: rgba(253, 246, 249, 0.98);
+    border: 1px solid var(--line-soft);
+    border-radius: 18px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    box-shadow: 0 8px 28px rgba(80, 50, 70, 0.18);
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    position: fixed;
+    right: 10px;
+    z-index: 51;
+  }
+
+  .site-nav-sheet .site-nav-item {
+    min-width: 76px;
   }
 
   .site-nav-actions .site-nav-item {
@@ -193,6 +250,6 @@ nav.site-nav {
   }
 
   body {
-    padding-bottom: calc(66px + env(safe-area-inset-bottom));
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
   }
 }
