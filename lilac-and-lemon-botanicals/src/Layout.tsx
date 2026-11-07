@@ -17,9 +17,9 @@ const navLinks: NavItem[] = [
   { to: '/my-skin', label: 'My Skin', icon: 'skinassessment' },
   { to: '/ingredients', label: 'Ingredients', icon: 'ingredientfinder' },
   { to: '/about', label: 'About', icon: 'aboutbrand', secondary: true },
-  { to: '/products', label: 'Products', icon: 'products' },
+  { to: '/products', label: 'Products', icon: 'products', secondary: true },
   { to: '/contact', label: 'Waitlist', icon: 'joinwaitlist', secondary: true },
-  { to: '/tester', label: 'Testers', icon: 'testerlogin', secondary: true },
+  { to: '/tester', label: 'Testers', icon: 'testerlogin' },
 ];
 
 const secondaryLinks = navLinks.filter((l) => l.secondary);
@@ -77,7 +77,7 @@ export default function Layout() {
                 moreActive || moreOpen ? ' active' : ''
               }`}
               aria-expanded={moreOpen}
-              aria-label="More pages"
+              aria-label="Boutique menu"
               onClick={() => setMoreOpen((o) => !o)}
             >
               <svg viewBox="0 0 32 28" aria-hidden="true">
@@ -85,7 +85,7 @@ export default function Layout() {
                 <circle cx="16" cy="14" r="2.4" />
                 <circle cx="25" cy="14" r="2.4" />
               </svg>
-              <span>More</span>
+              <span>Boutique</span>
             </button>
           </div>
 
