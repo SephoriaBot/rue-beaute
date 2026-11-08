@@ -27,3 +27,15 @@ export const bottleImages: Record<number, string> = {
   108: '/illustrations/08_Rosee.png',
   109: '/illustrations/09_Polie.png',
 };
+
+// Individual product labels (transparent PNGs in /public/labels).
+// Products without an entry fall back to the plain editorial placard.
+export const labelImages: Record<number, string> = {
+  101: '/labels/paquerette.png',
+  103: '/labels/clochette.png',
+  104: '/labels/matinale.png',
+  105: '/labels/fleurie.png',
+  106: '/labels/aube.png',
+  108: '/labels/rosee.png',
+  109: '/labels/polie.png',
+};

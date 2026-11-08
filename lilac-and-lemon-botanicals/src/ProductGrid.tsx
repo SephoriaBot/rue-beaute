@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useCart } from './CartContext';
-import { backgroundImages, bottleImages } from './productImages';
+import { backgroundImages, bottleImages, labelImages } from './productImages';
+import './product-labels.css';
 
 type Product = {
   id: number;
@@ -165,28 +166,31 @@ export default function ProductGrid() {
                       onClick={() => openProduct(p)}
                       aria-label={`View ${p.name}`}
                     >
-                      
-<div className="product-tile-editorial">
-  <span className="editorial-number">
-    {String(p.sort_order).padStart(2, '0')}
-  </span>
+                      {labelImages[p.id] ? (
+                        <span className="product-tile-label">
+                          <img
+                            src={labelImages[p.id]}
+                            alt={`${p.name} label`}
+                            loading="lazy"
+                          />
+                        </span>
+                      ) : (
+                        <div className="product-tile-editorial">
+                          <span className="editorial-number">
+                            {String(p.sort_order).padStart(2, '0')}
+                          </span>
 
-  <span className="editorial-rule" />
+                          <span className="editorial-rule" />
 
-  
-<span className="editorial-name">
-  {p.name}
-</span>
+                          <span className="editorial-name">{p.name}</span>
 
-<span className="editorial-ingredient">
-  {p.ingredient_label}
-</span>
+                          <span className="editorial-ingredient">
+                            {p.ingredient_label}
+                          </span>
 
-<span className="editorial-caption">
-  RUE BEAUTÉ
-</span>
-
-</div>
+                          <span className="editorial-caption">RUE BEAUTÉ</span>
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>

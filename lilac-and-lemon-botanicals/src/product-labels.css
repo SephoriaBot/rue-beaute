@@ -1,0 +1,26 @@
+/* Individual product labels on the shop grid */
+
+.product-tile-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
+.product-tile-label img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 14px rgba(74, 47, 71, 0.12));
+  transition: transform 0.25s ease, filter 0.25s ease;
+}
+
+.product-tile:hover .product-tile-label img,
+.product-tile:focus-visible .product-tile-label img {
+  transform: translateY(-4px);
+  filter: drop-shadow(0 10px 20px rgba(74, 47, 71, 0.18));
+}
